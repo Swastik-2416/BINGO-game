@@ -59,24 +59,12 @@
 
                 <div class="controls-row">
                     <button class="action-btn secondary" id="btn-host"
-                            style="flex:1; height:38px;" onclick="createRoomMenu()" disabled>
+                            style="flex:1; height:38px;" onclick="hostPrivateRoom()" disabled>
                         Host Private
                     </button>
                     <button class="action-btn secondary" id="btn-join"
                             style="flex:1; height:38px;" onclick="showJoinRoomMenu()" disabled>
                         Join Private
-                    </button>
-                </div>
-
-                <!-- Host Options (initially hidden) -->
-                <div class="caller-panel hidden" id="host-options-panel">
-                    <div class="avatar-label">Room Options</div>
-                    <label style="display:flex; align-items:center; gap:8px; font-size:0.8rem; cursor:pointer;">
-                        <input type="checkbox" id="teams-toggle">
-                        Enable Team Mode (🔴 vs 🔵)
-                    </label>
-                    <button class="action-btn primary" style="font-size:0.8rem;" onclick="hostPrivateRoom()">
-                        Confirm & Create Room
                     </button>
                 </div>
 
@@ -189,9 +177,8 @@
         function hostPrivateRoom() {
             if (!myUserId) { alert('Still connecting — please wait a moment!'); return; }
             const name = document.getElementById('nickname-input').value.trim() || 'Host';
-            const teams = document.getElementById('teams-toggle').checked;
             saveProfile(name);
-            createAndGoToRoom(name, false, teams);
+            createAndGoToRoom(name, false, false);
         }
 
         function joinPrivateRoom() {
@@ -237,7 +224,7 @@
                     status: 'lobby',
                     isPublic,
                     maxPlayers: 8,
-                    teamMode,
+                    teamMode: false,
                     createdAt: firebase.database.ServerValue.TIMESTAMP
                 }
             }).then(() => goToLobby(roomId, true));
@@ -246,7 +233,7 @@
         function goToLobby(roomId, isHost) {
             sessionStorage.setItem('bingo_roomId', roomId);
             sessionStorage.setItem('bingo_isHost', isHost ? 'true' : 'false');
-            window.location.href = 'lobby.html';
+            window.location.href = 'game.html';
         }
 
         // ─── Public rooms live browser ────────────────────────────────────────────
