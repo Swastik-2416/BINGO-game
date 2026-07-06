@@ -9,6 +9,9 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;900&family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
     
+    <!-- PeerJS WebRTC peer synchronization library -->
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+
     <style>
         :root {
             --bg-radial: radial-gradient(circle at 50% 30%, #1e1b4b 0%, #09090b 80%);
@@ -44,6 +47,7 @@
             justify-content: center;
             padding: 0.5rem;
             overflow: hidden;
+            position: relative;
         }
 
         .container {
@@ -277,9 +281,14 @@
             color: var(--text-main);
         }
 
-        .action-btn.secondary:hover {
+        .action-btn.secondary:hover:not(:disabled) {
             background: rgba(255, 255, 255, 0.08);
             border-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .action-btn.secondary:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
         }
 
         /* Compact Caller Box */
@@ -343,7 +352,7 @@
 
         .history-track {
             display: flex;
-            gap: 6px;
+            gap: 10px;
             overflow-x: auto;
             padding: 2px 1px 6px 1px;
             scrollbar-width: none;
@@ -474,6 +483,51 @@
             color: var(--text-main);
         }
 
+        /* Multiplayer Specific UI */
+        .caller-label {
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: #a5b4fc;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .lobby-player-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 0.35rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+        }
+
+        .lobby-player-name {
+            font-weight: 600;
+        }
+
+        .lobby-player-status {
+            font-size: 0.65rem;
+            font-weight: 800;
+            padding: 1px 4px;
+            border-radius: 3px;
+            text-transform: uppercase;
+        }
+
+        .lobby-player-status.ready {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--success);
+        }
+
+        .lobby-player-status.waiting {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--warning);
+        }
+
         /* Animations */
         @keyframes shake {
             0%, 100% { transform: translateX(0); }
@@ -525,7 +579,7 @@
     <div class="container">
         <h1>NEON BINGO</h1>
         <div class="subtitle" id="instructions-desc">
-            Type 1 to 25 from your keyboard, or click Randomize.
+            Play offline locally, or sync real-time with other players online.
         </div>
 
         <!-- B-I-N-G-O letters status -->
@@ -537,8 +591,61 @@
             <span class="bingo-letter" id="letter-4">O</span>
         </div>
 
+        <!-- Lobby / Connection Screen -->
+        <div class="glass-panel" id="lobby-panel">
+            <div class="subtitle" style="text-align: center; margin: 0 auto 0.2rem auto;">
+                Peer-to-peer WebRTC Multiplayer Lobbies
+            </div>
+
+            <!-- Nickname Input -->
+            <div class="caller-panel" style="background: rgba(255,255,255,0.02); border-color: rgba(255,255,255,0.08); padding: 0.5rem;">
+                <div class="caller-label" style="color: var(--text-main); font-size: 0.75rem;">Your Nickname</div>
+                <input type="text" class="caller-input" id="nickname-input" placeholder="Enter nickname" maxlength="12" value="Player" style="height: 32px; font-size: 0.85rem;">
+            </div>
+
+            <!-- Mode Selection Actions -->
+            <div class="controls-row" id="lobby-modes">
+                <button class="action-btn primary" onclick="startOfflineMode()">Solo Play</button>
+            </div>
+            <div class="controls-row" id="lobby-online-modes">
+                <button class="action-btn secondary" onclick="startHostMode()">Host Room</button>
+                <button class="action-btn secondary" onclick="showJoinInputs()">Join Room</button>
+            </div>
+
+            <!-- Host Room Details -->
+            <div class="caller-panel hidden" id="host-details">
+                <div class="room-code-display" style="text-align: center;">
+                    Room Code: <strong id="host-code-val" style="color: var(--secondary); font-size: 1.3rem; font-family: 'Orbitron'; text-shadow: 0 0 10px rgba(219,70,239,0.35);">-----</strong>
+                </div>
+                <div class="status-message neutral" id="host-status" style="font-size: 0.75rem; min-height: 14px;">Setting up connection...</div>
+            </div>
+
+            <!-- Join Room Details -->
+            <div class="caller-panel hidden" id="join-details">
+                <div class="caller-label" style="font-size: 0.75rem;">Enter Room Code</div>
+                <div class="caller-row">
+                    <input type="text" class="caller-input" id="join-code-input" placeholder="e.g. WXYZ" style="text-transform: uppercase; height: 32px; font-size: 0.85rem;">
+                    <button class="action-btn primary" style="flex: 0 0 80px; height: 32px; padding: 0;" onclick="handleJoinSubmit()">Connect</button>
+                </div>
+                <div class="status-message error" id="join-status" style="font-size: 0.75rem; min-height: 14px;"></div>
+            </div>
+
+            <!-- Room Player List -->
+            <div class="history-container hidden" id="room-players-container">
+                <div class="history-header">Players In Room</div>
+                <div id="room-players-list" style="display: flex; flex-direction: column; gap: 4px; padding: 2px 0;">
+                    <!-- List of player names and ready states -->
+                </div>
+            </div>
+
+            <!-- Lobby Control Button for host -->
+            <button class="action-btn primary hidden" id="lobby-start-btn" onclick="hostStartSetup()" disabled>
+                Open Setup for Everyone
+            </button>
+        </div>
+
         <!-- Setup Screen -->
-        <div class="glass-panel" id="setup-panel">
+        <div class="glass-panel hidden" id="setup-panel">
             <div class="grid" id="setup-grid">
                 <!-- Javascript will generate 25 inputs -->
             </div>
@@ -549,12 +656,12 @@
 
             <!-- Configuration Utilities -->
             <div class="controls-row">
-                <button class="action-btn secondary" onclick="clearBoard()">Clear</button>
-                <button class="action-btn secondary" onclick="randomizeBoard()">Randomize</button>
+                <button class="action-btn secondary" id="clear-board-btn" onclick="clearBoard()">Clear</button>
+                <button class="action-btn secondary" id="randomize-board-btn" onclick="randomizeBoard()">Randomize</button>
             </div>
 
-            <button class="action-btn primary" id="start-game-btn" onclick="startGame()" disabled>
-                Lock & Start Game
+            <button class="action-btn primary" id="setup-action-btn" onclick="handleSetupAction()" disabled>
+                Lock Board & Start Game
             </button>
         </div>
 
@@ -583,8 +690,8 @@
                 </div>
             </div>
 
-            <button class="action-btn secondary" style="padding: 0.5rem;" onclick="resetGame()">
-                Restart / Setup Grid
+            <button class="action-btn secondary" style="padding: 0.5rem;" onclick="handleResetOrDisconnect()">
+                Exit / Restart Setup
             </button>
         </div>
     </div>
@@ -593,14 +700,40 @@
     <div class="victory-overlay" id="victory-overlay">
         <div class="victory-card">
             <div class="victory-title">🎉 BINGO! 🎉</div>
-            <div class="victory-description">
+            <div class="victory-description" id="victory-desc">
                 You have completed 5 lines and won the game!
             </div>
             <button class="action-btn primary" style="width: 100%;" onclick="dismissVictoryAndReset()">
-                Play Again
+                Back to Lobby
             </button>
         </div>
     </div>
+
+    <!-- Fallback check for PeerJS load failures -->
+    <script>
+        window.onload = function() {
+            if (typeof Peer === 'undefined') {
+                const banner = document.createElement('div');
+                banner.style.background = 'var(--danger)';
+                banner.style.color = '#ffffff';
+                banner.style.padding = '6px';
+                banner.style.fontSize = '0.75rem';
+                banner.style.fontWeight = 'bold';
+                banner.style.width = '100%';
+                banner.style.textAlign = 'center';
+                banner.style.position = 'absolute';
+                banner.style.top = '0';
+                banner.style.left = '0';
+                banner.style.zIndex = '1000';
+                banner.innerText = "⚠️ PeerJS offline. Only Solo Play is available.";
+                document.body.appendChild(banner);
+                
+                // Disable multiplayer triggers
+                const multiBtns = document.querySelectorAll('#lobby-online-modes button');
+                multiBtns.forEach(btn => btn.disabled = true);
+            }
+        };
+    </script>
 
     <!-- Web Audio API Synthesizer Sound System -->
     <script>
@@ -654,7 +787,7 @@
                     time += durations[idx] * 0.75;
                 });
             } catch (err) {
-                console.log("Audio interaction error", err);
+                console.log("Audio play error", err);
             }
         }
 
@@ -680,23 +813,36 @@
         }
     </script>
 
-    <!-- BINGO Logic and Event Handlers -->
+    <!-- BINGO Logic and Connection Handlers -->
     <script>
-        const setupGridEl = document.getElementById('setup-grid');
-        const playGridEl = document.getElementById('play-grid');
+        const lobbyPanelEl = document.getElementById('lobby-panel');
         const setupPanelEl = document.getElementById('setup-panel');
         const playPanelEl = document.getElementById('play-panel');
+        const setupGridEl = document.getElementById('setup-grid');
+        const playGridEl = document.getElementById('play-grid');
         const boardStatusEl = document.getElementById('board-status');
-        const startGameBtn = document.getElementById('start-game-btn');
+        const setupActionBtn = document.getElementById('setup-action-btn');
         const callerInputEl = document.getElementById('caller-input');
         const statusMessageEl = document.getElementById('status-message');
         const historyTrackEl = document.getElementById('history-track');
         const victoryOverlayEl = document.getElementById('victory-overlay');
+        const victoryDescEl = document.getElementById('victory-desc');
         const instructionsDescEl = document.getElementById('instructions-desc');
 
+        // Multiplayer state parameters
+        let peer = null;
+        let conn = null; // Client's connection to Host
+        let hostConnections = []; // Host's connections to clients
+        let myName = 'Player';
+        let isHost = false;
+        let isMultiplayer = false;
+        let lobbyPlayers = [];
+        let playersReady = {};
+
+        // Local game parameters
         let boardValues = new Array(25).fill(null);
         let struckCells = new Array(25).fill(false);
-        let calledNumbers = [];
+        let calledNumbers = []; // Array of {number, caller}
         let isPlaying = false;
         
         const winningLines = [
@@ -705,10 +851,412 @@
             [0,6,12,18,24], [4,8,12,16,20] // Diagonals
         ];
 
-        // Setup Board Generation
+        /* ================= PEER CONNECTION LOGIC ================= */
+        
+        function generateRoomCode() {
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            let code = '';
+            for (let i = 0; i < 5; i++) {
+                code += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return code;
+        }
+
+        // Host Mode initiation
+        function startHostMode() {
+            myName = document.getElementById('nickname-input').value.trim() || 'Host';
+            isHost = true;
+            isMultiplayer = true;
+            
+            document.getElementById('lobby-modes').classList.add('hidden');
+            document.getElementById('lobby-online-modes').classList.add('hidden');
+            document.getElementById('host-details').classList.remove('hidden');
+            document.getElementById('room-players-container').classList.remove('hidden');
+            document.getElementById('lobby-start-btn').classList.remove('hidden');
+            
+            const roomCode = generateRoomCode();
+            document.getElementById('host-code-val').innerText = roomCode;
+            
+            const hostPeerId = 'neobingo-' + roomCode;
+            peer = new Peer(hostPeerId);
+            
+            peer.on('open', (id) => {
+                showLobbyStatus("Lobby ready! Share room code.", "success");
+                lobbyPlayers = [myName];
+                playersReady[myName] = false;
+                updateLobbyPlayerList();
+                document.getElementById('lobby-start-btn').disabled = false;
+            });
+            
+            peer.on('connection', (c) => {
+                c.on('open', () => {
+                    hostConnections.push(c);
+                });
+                
+                c.on('data', (data) => {
+                    handleHostIncomingData(c, data);
+                });
+                
+                c.on('close', () => {
+                    hostConnections = hostConnections.filter(x => x !== c);
+                    if (c.playerName) {
+                        lobbyPlayers = lobbyPlayers.filter(p => p !== c.playerName);
+                        delete playersReady[c.playerName];
+                        showLobbyStatus(`${c.playerName} disconnected.`, "neutral");
+                        broadcastPlayerUpdate();
+                    }
+                });
+            });
+            
+            peer.on('error', (err) => {
+                console.error(err);
+                if (err.type === 'unavailable-id') {
+                    showLobbyStatus("Conflict. Regenerating code...", "neutral");
+                    startHostMode();
+                } else {
+                    showLobbyStatus("Connection error: " + err.message, "error");
+                }
+            });
+        }
+
+        // Host data routing
+        function handleHostIncomingData(c, data) {
+            if (data.type === 'JOIN') {
+                c.playerName = data.name;
+                
+                // Ensure unique name
+                let finalName = data.name;
+                let counter = 1;
+                while (lobbyPlayers.includes(finalName)) {
+                    finalName = `${data.name} (${counter})`;
+                    counter++;
+                }
+                c.playerName = finalName;
+                lobbyPlayers.push(finalName);
+                playersReady[finalName] = false;
+                
+                c.send({
+                    type: 'JOIN_ACK',
+                    assignedName: finalName,
+                    players: lobbyPlayers
+                });
+                
+                showLobbyStatus(`${finalName} joined the lobby.`, "success");
+                broadcastPlayerUpdate();
+            }
+            
+            else if (data.type === 'PLAYER_READY') {
+                if (c.playerName) {
+                    playersReady[c.playerName] = data.ready;
+                    broadcastPlayerUpdate();
+                    checkAllPlayersReady();
+                }
+            }
+            
+            else if (data.type === 'CALL_NUMBER') {
+                handleStrikeRequest(data.number, c.playerName);
+            }
+            
+            else if (data.type === 'DECLARATION_WIN') {
+                if (isPlaying) {
+                    isPlaying = false;
+                    broadcast({
+                        type: 'GAME_OVER',
+                        winner: c.playerName
+                    });
+                    showVictoryOverlay(c.playerName);
+                }
+            }
+        }
+
+        // Join Mode initiation
+        function showJoinInputs() {
+            document.getElementById('lobby-modes').classList.add('hidden');
+            document.getElementById('lobby-online-modes').classList.add('hidden');
+            document.getElementById('join-details').classList.remove('hidden');
+        }
+
+        function handleJoinSubmit() {
+            const code = document.getElementById('join-code-input').value.trim().toUpperCase();
+            myName = document.getElementById('nickname-input').value.trim() || 'Player';
+            
+            if (!code) {
+                showLobbyStatus("Please enter a Room Code.", "error");
+                return;
+            }
+            
+            isHost = false;
+            isMultiplayer = true;
+            
+            document.getElementById('room-players-container').classList.remove('hidden');
+            showLobbyStatus("Connecting to host...", "neutral");
+            
+            peer = new Peer();
+            
+            peer.on('open', (id) => {
+                const hostPeerId = 'neobingo-' + code;
+                conn = peer.connect(hostPeerId);
+                
+                conn.on('open', () => {
+                    conn.send({ type: 'JOIN', name: myName });
+                    showLobbyStatus("Connected! Waiting for host to start board setup...", "success");
+                });
+                
+                conn.on('data', (data) => {
+                    handleClientIncomingData(data);
+                });
+                
+                conn.on('close', () => {
+                    alert("Room host disconnected.");
+                    location.reload();
+                });
+                
+                conn.on('error', (err) => {
+                    console.error(err);
+                    showLobbyStatus("Fail to connect. Check code.", "error");
+                });
+            });
+            
+            peer.on('error', (err) => {
+                console.error(err);
+                showLobbyStatus("Failed connection: " + err.message, "error");
+            });
+        }
+
+        // Client data routing
+        function handleClientIncomingData(data) {
+            if (data.type === 'JOIN_ACK') {
+                myName = data.assignedName;
+                document.getElementById('nickname-input').value = myName; // update text field
+                lobbyPlayers = data.players;
+                updateLobbyPlayerList();
+            }
+            
+            else if (data.type === 'PLAYER_UPDATE') {
+                lobbyPlayers = data.players;
+                playersReady = data.playersReady || {};
+                updateLobbyPlayerList();
+                
+                // If in setup mode, clients update validation check states
+                if (!setupPanelEl.classList.contains('hidden')) {
+                    updateValidation();
+                }
+            }
+            
+            else if (data.type === 'STATE_CHANGE') {
+                if (data.state === 'SETUP') {
+                    transitionToSetup();
+                } else if (data.state === 'PLAY') {
+                    transitionToPlay();
+                }
+            }
+            
+            else if (data.type === 'STRIKE_NUMBER') {
+                executeStrikeNumber(data.number, data.caller);
+            }
+            
+            else if (data.type === 'GAME_OVER') {
+                isPlaying = false;
+                showVictoryOverlay(data.winner);
+            }
+            
+            else if (data.type === 'RESET_LOBBY') {
+                alert("Host terminated the lobby. Returning to connection screen.");
+                location.reload();
+            }
+        }
+
+        // P2P communications helpers
+        function broadcast(msg) {
+            hostConnections.forEach(c => {
+                if (c.open) c.send(msg);
+            });
+        }
+
+        function broadcastPlayerUpdate() {
+            broadcast({
+                type: 'PLAYER_UPDATE',
+                players: lobbyPlayers,
+                playersReady: playersReady
+            });
+            updateLobbyPlayerList();
+        }
+
+        function showLobbyStatus(msg, type) {
+            const hStatus = document.getElementById('host-status');
+            const jStatus = document.getElementById('join-status');
+            
+            if (isHost) {
+                hStatus.innerText = msg;
+                hStatus.className = 'status-message ' + type;
+            } else {
+                jStatus.innerText = msg;
+                jStatus.className = 'status-message ' + type;
+            }
+        }
+
+        // Rebuilds list showing players & check marks
+        function updateLobbyPlayerList() {
+            const listEl = document.getElementById('room-players-list');
+            listEl.innerHTML = '';
+            
+            lobbyPlayers.forEach(p => {
+                const row = document.createElement('div');
+                row.className = 'lobby-player-row';
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'lobby-player-name';
+                nameSpan.innerText = p + (p === myName ? ' (You)' : '');
+                
+                const statusSpan = document.createElement('span');
+                
+                // Show ready/waiting status only during Board Setup phase, otherwise just show connected
+                const setupModeActive = !setupPanelEl.classList.contains('hidden');
+                if (setupModeActive) {
+                    const isReady = playersReady[p];
+                    statusSpan.className = 'lobby-player-status ' + (isReady ? 'ready' : 'waiting');
+                    statusSpan.innerText = isReady ? 'Ready' : 'Setup';
+                } else {
+                    statusSpan.className = 'lobby-player-status ready';
+                    statusSpan.innerText = 'Online';
+                }
+                
+                row.appendChild(nameSpan);
+                row.appendChild(statusSpan);
+                listEl.appendChild(row);
+            });
+        }
+
+        /* ================= PLAY OFFLINE (SOLO) ================= */
+        
+        function startOfflineMode() {
+            isMultiplayer = false;
+            isHost = false;
+            myName = document.getElementById('nickname-input').value.trim() || 'Player';
+            
+            lobbyPanelEl.classList.add('hidden');
+            setupPanelEl.classList.remove('hidden');
+            
+            initSetupBoard();
+        }
+
+        /* ================= GAMEPHASES CONTROLS ================= */
+
+        // Transition: Lobby -> Setup
+        function hostStartSetup() {
+            if (!isHost) return;
+            broadcast({ type: 'STATE_CHANGE', state: 'SETUP' });
+            transitionToSetup();
+        }
+
+        function transitionToSetup() {
+            lobbyPanelEl.classList.add('hidden');
+            setupPanelEl.classList.remove('hidden');
+            instructionsDescEl.innerText = "Assemble your game board. Fill the grid with numbers 1 to 25 manually, or shuffle instantly using Randomize.";
+            
+            initSetupBoard();
+            
+            // Adjust start button dynamically
+            if (isMultiplayer) {
+                if (isHost) {
+                    setupActionBtn.innerText = "Start Multiplayer Game";
+                } else {
+                    setupActionBtn.innerText = "Mark as Ready";
+                }
+            } else {
+                setupActionBtn.innerText = "Lock Board & Start Game";
+            }
+        }
+
+        // Transition: Setup -> Play
+        function handleSetupAction() {
+            if (isMultiplayer) {
+                if (isHost) {
+                    // Host checks conditions and triggers transition
+                    broadcast({ type: 'STATE_CHANGE', state: 'PLAY' });
+                    transitionToPlay();
+                } else {
+                    // Client toggles ready status
+                    const currentReady = !!playersReady[myName];
+                    const nextReady = !currentReady;
+                    
+                    playersReady[myName] = nextReady;
+                    conn.send({ type: 'PLAYER_READY', ready: nextReady });
+                    
+                    toggleSetupInputs(nextReady);
+                    
+                    if (nextReady) {
+                        setupActionBtn.innerText = "Ready! (Cancel)";
+                        setupActionBtn.classList.add('secondary');
+                        setupActionBtn.classList.remove('primary');
+                    } else {
+                        setupActionBtn.innerText = "Mark as Ready";
+                        setupActionBtn.classList.add('primary');
+                        setupActionBtn.classList.remove('secondary');
+                    }
+                }
+            } else {
+                // Solo Mode
+                transitionToPlay();
+            }
+        }
+
+        function toggleSetupInputs(disabled) {
+            for (let i = 0; i < 25; i++) {
+                const input = document.getElementById(`cell-input-${i}`);
+                if (input) input.disabled = disabled;
+            }
+            document.getElementById('clear-board-btn').disabled = disabled;
+            document.getElementById('randomize-board-btn').disabled = disabled;
+        }
+
+        function transitionToPlay() {
+            isPlaying = true;
+            calledNumbers = [];
+            struckCells.fill(false);
+
+            // Generate play grid
+            playGridEl.innerHTML = '';
+            for (let i = 0; i < 25; i++) {
+                const cellDiv = document.createElement('div');
+                cellDiv.className = 'cell';
+                cellDiv.id = `play-cell-${i}`;
+                cellDiv.innerText = boardValues[i];
+                
+                cellDiv.addEventListener('click', () => {
+                    playErrorSound();
+                    cellDiv.style.animation = 'none';
+                    setTimeout(() => {
+                        cellDiv.style.animation = 'shake 0.3s ease-in-out';
+                    }, 10);
+                    showStatus("Type the numbers in the input box below to strike!", "error");
+                });
+
+                playGridEl.appendChild(cellDiv);
+            }
+
+            resetBingoLetters();
+            instructionsDescEl.innerText = "Type called numbers in the input box to strike. Complete 5 lines to win!";
+            showStatus("Let the game begin!", "success");
+
+            setupPanelEl.classList.add('hidden');
+            playPanelEl.classList.remove('hidden');
+
+            callerInputEl.value = '';
+            historyTrackEl.innerHTML = '<div class="text-muted" style="font-size: 0.75rem; padding: 2px 0;">No calls yet.</div>';
+            callerInputEl.focus();
+
+            callerInputEl.onkeydown = function(e) {
+                if (e.key === 'Enter') handleStrikeSubmit();
+            };
+        }
+
+        /* ================= SETUP CONFIGURATION LOGIC ================= */
+        
         function initSetupBoard() {
             setupGridEl.innerHTML = '';
             boardValues.fill(null);
+            toggleSetupInputs(false);
             
             for (let i = 0; i < 25; i++) {
                 const input = document.createElement('input');
@@ -729,7 +1277,6 @@
             updateValidation();
         }
 
-        // Auto-advance cursor and validation on keystroke
         function handleCellInput(e) {
             const input = e.target;
             const idx = parseInt(input.dataset.index);
@@ -739,13 +1286,10 @@
             
             if (valStr !== '') {
                 const num = parseInt(valStr);
-                
-                // Auto-advance check
                 if ((num >= 3 && num <= 9 && valStr.length === 1) || valStr.length === 2) {
                     autoAdvance(idx);
                 }
             }
-            
             updateValidation();
         }
 
@@ -768,7 +1312,6 @@
             }
         }
 
-        // Format cell values
         function handleCellBlur(e) {
             const input = e.target;
             let valStr = input.value.trim();
@@ -781,7 +1324,6 @@
             updateValidation();
         }
 
-        // Keyboard cell focus navigation
         function handleKeyNavigation(e) {
             const idx = parseInt(e.target.dataset.index);
             
@@ -824,7 +1366,6 @@
             }
         }
 
-        // Wipe grid values
         function clearBoard() {
             for (let i = 0; i < 25; i++) {
                 const input = document.getElementById(`cell-input-${i}`);
@@ -834,7 +1375,6 @@
             focusCell(0);
         }
 
-        // Shuffles and populates grid randomly
         function randomizeBoard() {
             let nums = Array.from({length: 25}, (_, i) => i + 1);
             for (let i = nums.length - 1; i > 0; i--) {
@@ -853,7 +1393,7 @@
             playSynthSound([300, 400, 500], [0.08, 0.08, 0.12], 'sine');
         }
 
-        // Board Validation checks
+        // Validator scanner
         function updateValidation() {
             let counts = new Array(26).fill(0);
             let currentValues = new Array(25).fill(null);
@@ -895,63 +1435,79 @@
             const allFilled = currentValues.every(v => v !== null);
             const hasErrors = Array.from(setupGridEl.querySelectorAll('.error')).length > 0;
 
-            if (allFilled && !hasDuplicates && !hasErrors) {
-                startGameBtn.disabled = false;
-                boardStatusEl.innerHTML = `<span style="color: var(--success); font-weight:700;">Board Ready! ✓</span>`;
-            } else {
-                startGameBtn.disabled = true;
+            const boardValid = allFilled && !hasDuplicates && !hasErrors;
+
+            if (isMultiplayer) {
+                if (isHost) {
+                    checkAllPlayersReady();
+                } else {
+                    setupActionBtn.disabled = !boardValid;
+                }
+                
                 if (hasDuplicates) {
                     boardStatusEl.innerHTML = `<span style="color: var(--danger); font-weight:700;">Duplicate numbers found</span>`;
                 } else if (hasErrors) {
                     boardStatusEl.innerHTML = `<span style="color: var(--danger); font-weight:700;">Invalid values (must be 1-25)</span>`;
+                } else if (boardValid) {
+                    boardStatusEl.innerHTML = `<span style="color: var(--success); font-weight:700;">Board Ready! ✓</span>`;
                 } else {
                     boardStatusEl.innerHTML = `<span style="color: var(--text-muted);">${filledCount} / 25 entered</span>`;
                 }
-            }
-        }
-
-        // Transitions board setup to playing grid
-        function startGame() {
-            isPlaying = true;
-            calledNumbers = [];
-            struckCells.fill(false);
-
-            playGridEl.innerHTML = '';
-            for (let i = 0; i < 25; i++) {
-                const cellDiv = document.createElement('div');
-                cellDiv.className = 'cell';
-                cellDiv.id = `play-cell-${i}`;
-                cellDiv.innerText = boardValues[i];
-                
-                cellDiv.addEventListener('click', () => {
-                    playErrorSound();
-                    cellDiv.style.animation = 'none';
-                    setTimeout(() => {
-                        cellDiv.style.animation = 'shake 0.3s ease-in-out';
-                    }, 10);
-                    showStatus("Type the numbers in the input box below to strike!", "error");
-                });
-
-                playGridEl.appendChild(cellDiv);
-            }
-
-            resetBingoLetters();
-            instructionsDescEl.innerText = "Type called numbers in the input box to strike. Complete 5 lines to win!";
-            showStatus("Let the game begin!", "success");
-
-            setupPanelEl.classList.add('hidden');
-            playPanelEl.classList.remove('hidden');
-
-            callerInputEl.value = '';
-            historyTrackEl.innerHTML = '<div class="text-muted" style="font-size: 0.75rem; padding: 2px 0;">No calls yet.</div>';
-            callerInputEl.focus();
-
-            callerInputEl.onkeydown = function(e) {
-                if (e.key === 'Enter') {
-                    handleStrikeSubmit();
+            } else {
+                setupActionBtn.disabled = !boardValid;
+                if (boardValid) {
+                    boardStatusEl.innerHTML = `<span style="color: var(--success); font-weight:700;">Board Ready! ✓</span>`;
+                } else {
+                    if (hasDuplicates) {
+                        boardStatusEl.innerHTML = `<span style="color: var(--danger); font-weight:700;">Duplicate numbers found</span>`;
+                    } else if (hasErrors) {
+                        boardStatusEl.innerHTML = `<span style="color: var(--danger); font-weight:700;">Invalid values (must be 1-25)</span>`;
+                    } else {
+                        boardStatusEl.innerHTML = `<span style="color: var(--text-muted);">${filledCount} / 25 entered</span>`;
+                    }
                 }
-            };
+            }
         }
+
+        // Host checks clients' statuses
+        function checkAllPlayersReady() {
+            if (!isHost) return;
+            
+            // Validate Host board
+            let counts = new Array(26).fill(0);
+            let currentValues = new Array(25).fill(null);
+            for (let i = 0; i < 25; i++) {
+                const input = document.getElementById(`cell-input-${i}`);
+                if (input && input.value !== '') {
+                    let val = parseInt(input.value.trim());
+                    if (!isNaN(val) && val >= 1 && val <= 25) {
+                        currentValues[i] = val;
+                        counts[val]++;
+                    }
+                }
+            }
+            const hostBoardValid = currentValues.every(v => v !== null) && !counts.some(c => c > 1);
+            
+            // Check clients
+            const clients = lobbyPlayers.filter(p => p !== myName);
+            const allClientsReady = clients.every(cName => playersReady[cName] === true);
+            
+            if (hostBoardValid && allClientsReady && clients.length > 0) {
+                setupActionBtn.disabled = false;
+                setupActionBtn.innerText = "Start Multiplayer Game";
+            } else {
+                setupActionBtn.disabled = true;
+                if (!hostBoardValid) {
+                    setupActionBtn.innerText = "Fix your board first";
+                } else if (clients.length === 0) {
+                    setupActionBtn.innerText = "Waiting for players to join...";
+                } else {
+                    setupActionBtn.innerText = "Waiting for clients to be ready...";
+                }
+            }
+        }
+
+        /* ================= GAMEPLAY TRIGGERS & SYNC ================= */
 
         function handleStrikeSubmit() {
             if (!isPlaying) return;
@@ -968,17 +1524,70 @@
                 return;
             }
 
-            strikeNumber(val);
+            if (isMultiplayer) {
+                if (isHost) {
+                    handleStrikeRequest(val, myName);
+                } else {
+                    // Send to host
+                    conn.send({ type: 'CALL_NUMBER', number: val });
+                }
+            } else {
+                // Solo Mode
+                strikeNumber(val, "You");
+            }
         }
 
-        function strikeNumber(num) {
-            if (calledNumbers.includes(num)) {
+        // Host handles client strike request
+        function handleStrikeRequest(num, callerName) {
+            if (!isHost) return;
+            
+            // Validate: has it already been called?
+            const alreadyCalled = calledNumbers.some(c => c.number === num);
+            if (alreadyCalled) {
+                return; // ignore duplicates
+            }
+            
+            // Broadcast strike action
+            broadcast({
+                type: 'STRIKE_NUMBER',
+                number: num,
+                caller: callerName
+            });
+            
+            executeStrikeNumber(num, callerName);
+        }
+
+        // Executes strike actions locally
+        function executeStrikeNumber(num, callerName) {
+            calledNumbers.push({ number: num, caller: callerName });
+            updateCalledHistory();
+
+            let cellIndex = boardValues.indexOf(num);
+
+            if (cellIndex !== -1) {
+                struckCells[cellIndex] = true;
+                const cellEl = document.getElementById(`play-cell-${cellIndex}`);
+                if (cellEl) {
+                    cellEl.classList.add('struck');
+                }
+                showStatus(`Number ${num} called by ${callerName} (Struck! 🎉)`, "success");
+                playStrikeSound();
+                checkLinesAndWin();
+            } else {
+                showStatus(`Number ${num} called by ${callerName} (Not on board).`, "neutral");
+                playNoMatchSound();
+            }
+        }
+
+        function strikeNumber(num, callerName) {
+            const alreadyCalled = calledNumbers.some(c => c.number === num);
+            if (alreadyCalled) {
                 showStatus(`Number ${num} was already called!`, "neutral");
                 playNoMatchSound();
                 return;
             }
 
-            calledNumbers.push(num);
+            calledNumbers.push({ number: num, caller: callerName });
             updateCalledHistory();
 
             let cellIndex = boardValues.indexOf(num);
@@ -998,6 +1607,7 @@
             }
         }
 
+        // Renders visual called lists with names
         function updateCalledHistory() {
             if (calledNumbers.length === 0) {
                 historyTrackEl.innerHTML = '<div class="text-muted" style="font-size: 0.75rem; padding: 2px 0;">No calls yet.</div>';
@@ -1006,15 +1616,34 @@
 
             historyTrackEl.innerHTML = '';
             for (let i = calledNumbers.length - 1; i >= 0; i--) {
-                const num = calledNumbers[i];
+                const entry = calledNumbers[i];
+                
+                const itemDiv = document.createElement('div');
+                itemDiv.style.display = 'flex';
+                itemDiv.style.flexDirection = 'column';
+                itemDiv.style.alignItems = 'center';
+                itemDiv.style.gap = '2px';
+                itemDiv.style.flexShrink = '0';
+                
                 const badge = document.createElement('div');
                 badge.className = 'history-badge';
-                badge.innerText = num;
-                
+                badge.innerText = entry.number;
                 if (i === calledNumbers.length - 1) {
                     badge.classList.add('latest');
                 }
-                historyTrackEl.appendChild(badge);
+                
+                const nameLabel = document.createElement('span');
+                nameLabel.style.fontSize = '0.65rem';
+                nameLabel.style.color = 'var(--text-muted)';
+                nameLabel.style.maxWidth = '45px';
+                nameLabel.style.overflow = 'hidden';
+                nameLabel.style.textOverflow = 'ellipsis';
+                nameLabel.style.whiteSpace = 'nowrap';
+                nameLabel.innerText = entry.caller === myName ? 'You' : entry.caller;
+                
+                itemDiv.appendChild(badge);
+                itemDiv.appendChild(nameLabel);
+                historyTrackEl.appendChild(itemDiv);
             }
         }
 
@@ -1047,12 +1676,36 @@
 
             if (linesCompleted >= 5) {
                 isPlaying = false;
-                playVictorySound();
-                setTimeout(() => {
-                    victoryOverlayEl.classList.add('show');
-                    triggerConfetti();
-                }, 600);
+                if (isMultiplayer) {
+                    if (isHost) {
+                        broadcast({
+                            type: 'GAME_OVER',
+                            winner: myName
+                        });
+                        showVictoryOverlay(myName);
+                    } else {
+                        // Request Host to broadcast win
+                        conn.send({ type: 'DECLARATION_WIN' });
+                    }
+                } else {
+                    // Solo Win
+                    showVictoryOverlay("You");
+                }
             }
+        }
+
+        function showVictoryOverlay(winnerName) {
+            isPlaying = false;
+            playVictorySound();
+            
+            if (winnerName === myName || winnerName === "You") {
+                victoryDescEl.innerText = "Incredible! You completed 5 lines first and won the game!";
+            } else {
+                victoryDescEl.innerText = `Game Over. ${winnerName} completed 5 lines and won the game!`;
+            }
+            
+            victoryOverlayEl.classList.add('show');
+            triggerConfetti();
         }
 
         let confettiInterval = null;
@@ -1094,10 +1747,24 @@
             statusMessageEl.className = 'status-message ' + type;
         }
 
-        function resetGame() {
+        // Exit / Disconnection handler
+        function handleResetOrDisconnect() {
+            if (isMultiplayer) {
+                const conf = confirm("Exit multiplayer match? You will leave the game room.");
+                if (!conf) return;
+                
+                if (isHost) {
+                    broadcast({ type: 'RESET_LOBBY' });
+                }
+                location.reload(); // Hard reload cleans Peer connections nicely
+            } else {
+                resetGameOffline();
+            }
+        }
+
+        function resetGameOffline() {
             isPlaying = false;
             if (confettiInterval) clearInterval(confettiInterval);
-            
             resetBingoLetters();
             
             playPanelEl.classList.add('hidden');
@@ -1109,10 +1776,15 @@
 
         function dismissVictoryAndReset() {
             victoryOverlayEl.classList.remove('show');
-            resetGame();
+            location.reload(); // Returning to lobby cleanly resets WebRTC peer states
         }
 
-        initSetupBoard();
+        function resetBingoLetters() {
+            for (let i = 0; i < 5; i++) {
+                document.getElementById(`letter-${i}`).classList.remove('active');
+            }
+            lastCompletedCount = 0;
+        }
     </script>
 </body>
 </html>
