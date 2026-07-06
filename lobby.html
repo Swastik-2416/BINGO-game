@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bingoo! — Lobby</title>
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- Firebase Compat SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+</head>
+<body>
+
+    <div class="sound-toggle" id="sound-toggle" onclick="toggleMute()" title="Toggle Sound">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" id="sound-icon">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M12 18.75V5.25L7.75 9.5H4.5v5h3.25L12 18.75z" />
+        </svg>
+    </div>
+
+    <div class="container">
+        <header>
+            <h1 onclick="window.location.href='index.html'" style="cursor:pointer;">Bingoo!</h1>
+            <div id="room-header-info" style="font-size: 0.75rem; color: var(--secondary); font-weight: 700; font-family: 'Orbitron';">Lobby</div>
+        </header>
+
+        <section class="screen" id="screen-room">
+            <div class="game-layout">
+                <!-- Players List Column -->
+                <div class="side-col glass-panel" style="flex: 0 0 280px;">
+                    <div class="panel-header">
+                        <span>Players</span>
+                        <span id="player-count">0 / 8</span>
+                    </div>
+                    <div class="players-list" id="room-players-list">
+                        <!-- Populated by JS -->
+                    </div>
+                    
+                    <!-- Team Toggle / Assignment UI -->
+                    <div class="caller-panel hidden" id="team-selector-panel" style="margin-top: auto;">
+                        <div class="avatar-label" style="text-align: center; margin-bottom: 4px;">Choose Team</div>
+                        <div class="controls-row">
+                            <button class="action-btn" style="background: var(--team-red); color:#fff; font-size:0.7rem; padding:6px; flex:1;" onclick="chooseTeam('red')">Red Team</button>
+                            <button class="action-btn" style="background: var(--team-blue); color:#fff; font-size:0.7rem; padding:6px; flex:1;" onclick="chooseTeam('blue')">Blue Team</button>
+                        </div>
+                    </div>
+
+                    <button class="action-btn primary hidden" id="lobby-start-btn" onclick="hostTriggerSetup()" style="width: 100%;">
+                        Open Board Setup
+                    </button>
+                    <div class="status-message neutral" id="lobby-status-msg" style="font-size: 0.65rem;"></div>
+                </div>
+
+                <!-- Chat & Exit Column -->
+                <div class="side-col glass-panel" style="flex-grow: 1;">
+                    <div class="panel-header">Lobby Chat</div>
+                    <div class="chat-panel">
+                        <div class="chat-messages" id="chat-messages">
+                            <!-- Messages appended here -->
+                        </div>
+                        <div class="chat-input-row">
+                            <input type="text" class="chat-input" id="chat-input" placeholder="Type message..." autocomplete="off">
+                            <button class="action-btn primary" style="width: 60px; height: 28px; padding:0;" onclick="sendChatMessage()">Send</button>
+                        </div>
+                    </div>
+                    
+                    <button class="action-btn secondary" style="font-size: 0.75rem; padding: 0.35rem;" onclick="exitRoom()">
+                        Leave Lobby
+                    </button>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Mute Logic -->
+    <script>
+        let audioMuted = false;
+        function toggleMute() {
+            audioMuted = !audioMuted;
+            const soundIcon = document.getElementById('sound-icon');
+            if (audioMuted) {
+                soundIcon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" d="M17.25 9.75L19.5 12m0 0l2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6L4.5 9.5H1.5v5h3l4.5 3.75V5.25z" />`;
+                document.getElementById('sound-toggle').style.color = 'var(--danger)';
+            } else {
+                soundIcon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M12 18.75V5.25L7.75 9.5H4.5v5h3.25L12 18.75z" stroke-width="2" />`;
+                document.getElementById('sound-toggle').style.color = 'var(--text-muted)';
+            }
+        }
+    </script>
+
+    <!-- Synced Lobby Script -->
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyDQY2q5-6y1y90-MwKaMAXG8Tg6fFs2zoY",
+            authDomain: "bingo-game-47a41.firebaseapp.com",
+            databaseURL: "https://bingo-game-47a41-default-rtdb.firebaseio.com",
+            projectId: "bingo-game-47a41",
+            storageBucket: "bingo-game-47a41.firebasestorage.app",
+            messagingSenderId: "367273433063",
+            appId: "1:367273433063:web:7b95c28334524d06f6cf42",
+            measurementId: "G-V0G09M75SB"
+        };
+
+        if (typeof firebase !== 'undefined') {
+            firebase.initializeApp(firebaseConfig);
+        }
+
+        // Fetch state from sessionStorage
+        const myName = sessionStorage.getItem('bingo_myName') || 'Player';
+        const selectedAvatar = sessionStorage.getItem('bingo_myAvatar') || '🦊';
+        const myColor = sessionStorage.getItem('bingo_myColor') || '#6366f1';
+        const myUserId = sessionStorage.getItem('bingo_myUserId');
+        const roomId = sessionStorage.getItem('bingo_roomId');
+        
+        let isHost = sessionStorage.getItem('bingo_isHost') === 'true';
+        let roomRef = null;
+        let playersRef = null;
+        let chatRef = null;
+
+        function initLobby() {
+            if (!roomId || !myUserId) {
+                window.location.href = 'index.html';
+                return;
+            }
+
+            roomRef = firebase.database().ref('rooms/' + roomId);
+            playersRef = roomRef.child('players');
+            chatRef = roomRef.child('chat');
+
+            // Set bindings
+            document.getElementById('chat-input').onkeydown = e => {
+                if (e.key === 'Enter') sendChatMessage();
+            };
+
+            // Register Player details
+            playersRef.child(myUserId).set({
+                name: myName,
+                avatar: selectedAvatar,
+                color: myColor,
+                ready: false,
+                team: 'red',
+                linesCompleted: 0
+            });
+
+            // Clean up player on tab close
+            playersRef.child(myUserId).onDisconnect().remove();
+
+            // Room state listener
+            roomRef.on('value', snapshot => {
+                const data = snapshot.val();
+                if (!data) {
+                    alert("Lobby has been closed by host.");
+                    window.location.href = 'index.html';
+                    return;
+                }
+
+                // Verify host role dynamically
+                isHost = (data.meta.host === myUserId);
+                sessionStorage.setItem('bingo_isHost', isHost ? 'true' : 'false');
+
+                // Header status
+                document.getElementById('room-header-info').innerText = `${data.meta.code} (${data.meta.teamMode ? 'Teams' : 'Solo'})`;
+
+                // Update players panel
+                const listEl = document.getElementById('room-players-list');
+                listEl.innerHTML = '';
+                const players = data.players || {};
+                const playerKeys = Object.keys(players);
+                document.getElementById('player-count').innerText = `${playerKeys.length} / 8`;
+
+                playerKeys.forEach(key => {
+                    const p = players[key];
+                    const item = document.createElement('div');
+                    item.className = 'player-item' + (key === data.meta.host ? ' host' : '');
+                    
+                    const isSelf = (key === myUserId);
+                    const tag = p.ready ? 'Ready' : 'Setup';
+                    const tagClass = p.ready ? 'ready' : 'waiting';
+
+                    let teamLabel = '';
+                    if (data.meta.teamMode) {
+                        teamLabel = `<span class="player-badge team-${p.team}">${p.team === 'red' ? 'RED' : 'BLUE'}</span>`;
+                    }
+
+                    item.innerHTML = `
+                        <div class="player-meta">
+                            <span class="player-avatar" style="border: 2px solid ${p.color};">${p.avatar}</span>
+                            <span class="player-name" style="${isSelf ? 'font-weight: 800;' : ''}">${p.name} ${isSelf ? '(You)' : ''}</span>
+                            ${teamLabel}
+                        </div>
+                        <span class="lobby-player-status ${tagClass}">${tag}</span>
+                    `;
+                    listEl.appendChild(item);
+                });
+
+                // Lobby triggers
+                const lobbyStartBtn = document.getElementById('lobby-start-btn');
+                const lobbyStatusMsg = document.getElementById('lobby-status-msg');
+
+                if (data.meta.status === 'lobby') {
+                    if (isHost) {
+                        lobbyStartBtn.classList.remove('hidden');
+                        // Enabled when we have at least 1 other client or alone for debugging/offline tests
+                        lobbyStartBtn.disabled = (playerKeys.length < 2);
+                        lobbyStatusMsg.innerText = playerKeys.length < 2 ? "Waiting for players..." : "Ready to open setup!";
+                    } else {
+                        lobbyStartBtn.classList.add('hidden');
+                        lobbyStatusMsg.innerText = "Waiting for host to start setup...";
+                    }
+                } 
+                else if (data.meta.status === 'setup') {
+                    // Redirect to Setup Board page!
+                    window.location.href = 'setup.html';
+                }
+
+                // Team view toggle
+                const teamPanel = document.getElementById('team-selector-panel');
+                if (data.meta.teamMode) {
+                    teamPanel.classList.remove('hidden');
+                } else {
+                    teamPanel.classList.add('hidden');
+                }
+            });
+
+            // Chat listener
+            chatRef.limitToLast(30).on('child_added', snapshot => {
+                const msg = snapshot.val();
+                if (msg) appendChatMessage(msg);
+            });
+        }
+
+        function chooseTeam(teamName) {
+            if (playersRef && myUserId) {
+                playersRef.child(myUserId).child('team').set(teamName);
+            }
+        }
+
+        function sendChatMessage() {
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if (text === '') return;
+            
+            if (chatRef) {
+                chatRef.push({
+                    text: text,
+                    from: myName,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                });
+            }
+            input.value = '';
+        }
+
+        function appendChatMessage(msg) {
+            const messagesContainer = document.getElementById('chat-messages');
+            const isSystem = !msg.from;
+            const item = document.createElement('div');
+            item.className = 'chat-msg' + (isSystem ? ' system' : '');
+            
+            if (isSystem) {
+                item.innerText = msg.text;
+            } else {
+                item.innerHTML = `<span class="chat-msg-from" style="color:var(--primary);">${msg.from}:</span>${msg.text}`;
+            }
+            
+            messagesContainer.appendChild(item);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function hostTriggerSetup() {
+            if (roomRef && isHost) {
+                roomRef.child('meta/status').set('setup');
+                chatRef.push({
+                    text: "Lobby host opened board setup! Go fill your grids.",
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                });
+            }
+        }
+
+        function exitRoom() {
+            if (playersRef && myUserId) {
+                playersRef.child(myUserId).remove().then(() => {
+                    sessionStorage.removeItem('bingo_roomId');
+                    window.location.href = 'index.html';
+                });
+            } else {
+                window.location.href = 'index.html';
+            }
+        }
+
+        // Boot
+        initLobby();
+    </script>
+</body>
+</html>

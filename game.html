@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bingoo! — Play</title>
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- Firebase Compat SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+</head>
+<body>
+
+    <div class="sound-toggle" id="sound-toggle" onclick="toggleMute()" title="Toggle Sound">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" id="sound-icon">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M12 18.75V5.25L7.75 9.5H4.5v5h3.25L12 18.75z" />
+        </svg>
+    </div>
+
+    <div class="container">
+        <header>
+            <h1 onclick="window.location.href='index.html'" style="cursor:pointer;">Bingoo!</h1>
+            <div id="room-header-info" style="font-size: 0.75rem; color: var(--secondary); font-weight: 700; font-family: 'Orbitron';">Play</div>
+        </header>
+
+        <section class="screen" id="screen-room">
+            <div class="game-layout">
+                <!-- Players List panel -->
+                <div class="side-col glass-panel" style="flex: 0 0 200px;">
+                    <div class="panel-header">Players Lines</div>
+                    <div class="players-list" id="room-players-list">
+                        <!-- Loaded dynamically -->
+                    </div>
+                </div>
+
+                <!-- Center game board grid columns -->
+                <div class="center-col">
+                    <div class="glass-panel" style="width: 100%; height: 100%;">
+                        <div class="bingo-header">
+                            <span class="bingo-letter" id="letter-0">B</span>
+                            <span class="bingo-letter" id="letter-1">I</span>
+                            <span class="bingo-letter" id="letter-2">N</span>
+                            <span class="bingo-letter" id="letter-3">G</span>
+                            <span class="bingo-letter" id="letter-4">O</span>
+                        </div>
+                        <div class="grid" id="play-grid" style="margin: auto auto;">
+                            <!-- JS generates static divs -->
+                        </div>
+                        
+                        <!-- Anti-Cheat caller panel -->
+                        <div class="caller-panel">
+                            <div class="caller-row">
+                                <input type="text" inputmode="numeric" pattern="[0-9]*" class="caller-input" id="caller-input" placeholder="Type announced number" autocomplete="off">
+                                <button class="action-btn primary caller-btn" onclick="handleStrikeSubmit()">
+                                    Strike
+                                </button>
+                            </div>
+                            <div class="status-message" id="status-message"></div>
+                        </div>
+
+                        <!-- Called timeline log -->
+                        <div class="history-container">
+                            <div class="history-header">Called Timeline</div>
+                            <div class="history-track" id="history-track">
+                                <div class="text-muted" style="font-size: 0.7rem; padding: 2px 0;">No numbers called yet.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right chat panel column -->
+                <div class="side-col glass-panel" style="flex: 0 0 240px;">
+                    <div class="panel-header">Chat Log</div>
+                    <div class="chat-panel">
+                        <div class="chat-messages" id="chat-messages">
+                            <!-- Messages appended here -->
+                        </div>
+                        <div class="chat-input-row">
+                            <input type="text" class="chat-input" id="chat-input" placeholder="Message..." autocomplete="off">
+                            <button class="action-btn primary" style="width: 50px; height: 28px; padding:0;" onclick="sendChatMessage()">Send</button>
+                        </div>
+                    </div>
+                    
+                    <button class="action-btn secondary" style="font-size: 0.75rem; padding: 0.35rem;" onclick="exitRoom()">
+                        Leave Match
+                    </button>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Victory Overlay -->
+    <div class="victory-overlay" id="victory-overlay">
+        <div class="victory-card">
+            <div class="victory-title">🏆 BINGO! 🏆</div>
+            <div class="victory-description" id="victory-desc">
+                Loading winner info...
+            </div>
+            <button class="action-btn primary" style="width: 100%;" onclick="dismissVictoryAndExit()">
+                Return to Lobby
+            </button>
+        </div>
+    </div>
+
+    <!-- Web Audio API Sound Logic -->
+    <script>
+        let audioMuted = false;
+        let audioCtx = null;
+
+        function getAudioContext() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            return audioCtx;
+        }
+
+        function toggleMute() {
+            audioMuted = !audioMuted;
+            const soundIcon = document.getElementById('sound-icon');
+            if (audioMuted) {
+                soundIcon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" d="M17.25 9.75L19.5 12m0 0l2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6L4.5 9.5H1.5v5h3l4.5 3.75V5.25z" />`;
+                document.getElementById('sound-toggle').style.color = 'var(--danger)';
+            } else {
+                soundIcon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M12 18.75V5.25L7.75 9.5H4.5v5h3.25L12 18.75z" stroke-width="2" />`;
+                document.getElementById('sound-toggle').style.color = 'var(--text-muted)';
+            }
+        }
+
+        function playSynthSound(freqs, durations, type = 'sine') {
+            if (audioMuted) return;
+            try {
+                const ctx = getAudioContext();
+                let time = ctx.currentTime;
+                freqs.forEach((freq, idx) => {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, time);
+                    gain.gain.setValueAtTime(0.12, time);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, time + durations[idx]);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(time);
+                    osc.stop(time + durations[idx]);
+                    time += durations[idx] * 0.75;
+                });
+            } catch (err) {
+                console.log(err);
+            }
+        }
+
+        function playStrikeSound() {
+            playSynthSound([523.25, 783.99], [0.08, 0.12], 'triangle');
+        }
+
+        function playNoMatchSound() {
+            playSynthSound([220, 196], [0.12, 0.15], 'sawtooth');
+        }
+
+        function playLineWinSound() {
+            playSynthSound([523.25, 659.25, 783.99, 1046.50], [0.12, 0.12, 0.12, 0.25], 'sine');
+        }
+
+        function playVictorySound() {
+            playSynthSound([261.63, 329.63, 392.00, 523.25, 659.25, 783.99, 1046.50, 1318.51, 1567.98, 2093.00], 
+                           [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.5], 'sine');
+        }
+
+        function playErrorSound() {
+            playSynthSound([180, 180], [0.08, 0.08], 'triangle');
+        }
+    </script>
+
+    <!-- Synced Gameplay Script -->
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyDQY2q5-6y1y90-MwKaMAXG8Tg6fFs2zoY",
+            authDomain: "bingo-game-47a41.firebaseapp.com",
+            databaseURL: "https://bingo-game-47a41-default-rtdb.firebaseio.com",
+            projectId: "bingo-game-47a41",
+            storageBucket: "bingo-game-47a41.firebasestorage.app",
+            messagingSenderId: "367273433063",
+            appId: "1:367273433063:web:7b95c28334524d06f6cf42",
+            measurementId: "G-V0G09M75SB"
+        };
+
+        if (typeof firebase !== 'undefined') {
+            firebase.initializeApp(firebaseConfig);
+        }
+
+        const myName = sessionStorage.getItem('bingo_myName') || 'Player';
+        const myUserId = sessionStorage.getItem('bingo_myUserId');
+        const roomId = sessionStorage.getItem('bingo_roomId');
+        
+        let isHost = sessionStorage.getItem('bingo_isHost') === 'true';
+        let roomRef = null;
+        let playersRef = null;
+        let chatRef = null;
+        let callsRef = null;
+
+        let boardValues = [];
+        let struckCells = new Array(25).fill(false);
+        let calledNumbers = [];
+        let isPlaying = false;
+        let lastCompletedCount = 0;
+
+        const winningLines = [
+            [0,1,2,3,4], [5,6,7,8,9], [10,11,12,13,14], [15,16,17,18,19], [20,21,22,23,24],
+            [0,5,10,15,20], [1,6,11,16,21], [2,7,12,17,22], [3,8,13,18,23], [4,9,14,19,24],
+            [0,6,12,18,24], [4,8,12,16,20]
+        ];
+
+        function initPlay() {
+            if (!roomId || !myUserId) {
+                window.location.href = 'index.html';
+                return;
+            }
+
+            // Restore saved board state from sessionStorage
+            const savedBoard = sessionStorage.getItem('bingo_boardValues');
+            if (savedBoard) {
+                boardValues = JSON.parse(savedBoard);
+            } else {
+                alert("Board configuration missing. Returning to lobby.");
+                window.location.href = 'lobby.html';
+                return;
+            }
+
+            roomRef = firebase.database().ref('rooms/' + roomId);
+            playersRef = roomRef.child('players');
+            chatRef = roomRef.child('chat');
+            callsRef = roomRef.child('calls');
+
+            isPlaying = true;
+
+            // Generate play grid
+            buildPlayGrid();
+
+            // Set chat events
+            document.getElementById('chat-input').onkeydown = e => {
+                if (e.key === 'Enter') sendChatMessage();
+            };
+
+            // Sync room configurations & players
+            roomRef.on('value', snapshot => {
+                const data = snapshot.val();
+                if (!data) return;
+
+                document.getElementById('room-header-info').innerText = `${data.meta.code} (Play)`;
+
+                // Update players scoreboard
+                const listEl = document.getElementById('room-players-list');
+                listEl.innerHTML = '';
+                const players = data.players || {};
+                const playerKeys = Object.keys(players);
+
+                playerKeys.forEach(key => {
+                    const p = players[key];
+                    const item = document.createElement('div');
+                    item.className = 'player-item' + (key === data.meta.host ? ' host' : '');
+                    
+                    const isSelf = (key === myUserId);
+                    const lines = p.linesCompleted || 0;
+
+                    let teamLabel = '';
+                    if (data.meta.teamMode) {
+                        teamLabel = `<span class="player-badge team-${p.team}">${p.team === 'red' ? 'RED' : 'BLUE'}</span>`;
+                    }
+
+                    item.innerHTML = `
+                        <div class="player-meta">
+                            <span class="player-avatar" style="border: 2px solid ${p.color};">${p.avatar}</span>
+                            <span class="player-name" style="${isSelf ? 'font-weight: 800;' : ''}">${p.name}</span>
+                            ${teamLabel}
+                        </div>
+                        <span style="font-weight:700; font-size:0.75rem;">${lines} L</span>
+                    `;
+                    listEl.appendChild(item);
+                });
+
+                // Sycn winner podium
+                if (data.meta.status === 'results' && data.meta.winner) {
+                    showVictoryOverlay(data.meta.winner);
+                }
+            });
+
+            // Sync chat log
+            chatRef.limitToLast(30).on('child_added', snapshot => {
+                const msg = snapshot.val();
+                if (msg) appendChatMessage(msg);
+            });
+
+            // Sync calls timeline
+            callsRef.on('child_added', snapshot => {
+                const call = snapshot.val();
+                if (call) executeStruckNumberSync(call.number, call.calledBy);
+            });
+        }
+
+        function buildPlayGrid() {
+            const playGridEl = document.getElementById('play-grid');
+            playGridEl.innerHTML = '';
+            for (let i = 0; i < 25; i++) {
+                const cellDiv = document.createElement('div');
+                cellDiv.className = 'cell';
+                cellDiv.id = `play-cell-${i}`;
+                cellDiv.innerText = boardValues[i];
+                
+                cellDiv.addEventListener('click', () => {
+                    playErrorSound();
+                    cellDiv.style.animation = 'none';
+                    setTimeout(() => {
+                        cellDiv.style.animation = 'shake 0.3s ease-in-out';
+                    }, 10);
+                    showStatus("Type the numbers in the input box below to strike!", "error");
+                });
+
+                playGridEl.appendChild(cellDiv);
+            }
+        }
+
+        function handleStrikeSubmit() {
+            if (!isPlaying) return;
+
+            const callerInputEl = document.getElementById('caller-input');
+            let valStr = callerInputEl.value.trim();
+            if (valStr === '') return;
+
+            let val = parseInt(valStr);
+            callerInputEl.value = '';
+
+            if (isNaN(val) || val < 1 || val > 25) {
+                showStatus("Enter a valid number between 1 and 25.", "error");
+                playErrorSound();
+                return;
+            }
+
+            // Sync database call
+            callsRef.once('value', snapshot => {
+                const calls = snapshot.val() || {};
+                const alreadyCalled = Object.values(calls).some(c => c.number === val);
+                
+                if (alreadyCalled) {
+                    showStatus(`Number ${val} was already called!`, "neutral");
+                    playNoMatchSound();
+                    return;
+                }
+                
+                callsRef.push({
+                    number: val,
+                    calledBy: myName,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                });
+            });
+        }
+
+        function executeStruckNumberSync(num, callerName) {
+            calledNumbers.push({ number: num, caller: callerName });
+            updateCalledHistory();
+
+            let cellIndex = boardValues.indexOf(num);
+
+            if (cellIndex !== -1) {
+                struckCells[cellIndex] = true;
+                const cellEl = document.getElementById(`play-cell-${cellIndex}`);
+                if (cellEl) {
+                    cellEl.classList.add('struck');
+                }
+                showStatus(`Number ${num} called by ${callerName} (Struck! 🎉)`, "success");
+                playStrikeSound();
+                checkLinesAndWinSync();
+            } else {
+                showStatus(`Number ${num} called by ${callerName} (Not on board).`, "neutral");
+                playNoMatchSound();
+            }
+        }
+
+        function updateCalledHistory() {
+            const historyTrackEl = document.getElementById('history-track');
+            if (calledNumbers.length === 0) {
+                historyTrackEl.innerHTML = '<div class="text-muted" style="font-size: 0.75rem; padding: 2px 0;">No calls yet.</div>';
+                return;
+            }
+
+            historyTrackEl.innerHTML = '';
+            for (let i = calledNumbers.length - 1; i >= 0; i--) {
+                const entry = calledNumbers[i];
+                
+                const itemDiv = document.createElement('div');
+                itemDiv.style.display = 'flex';
+                itemDiv.style.flexDirection = 'column';
+                itemDiv.style.alignItems = 'center';
+                itemDiv.style.gap = '2px';
+                itemDiv.style.flexShrink = '0';
+                
+                const badge = document.createElement('div');
+                badge.className = 'history-badge';
+                badge.innerText = entry.number;
+                if (i === calledNumbers.length - 1) {
+                    badge.classList.add('latest');
+                }
+                
+                const nameLabel = document.createElement('span');
+                nameLabel.style.fontSize = '0.65rem';
+                nameLabel.style.color = 'var(--text-muted)';
+                nameLabel.style.maxWidth = '45px';
+                nameLabel.style.overflow = 'hidden';
+                nameLabel.style.textOverflow = 'ellipsis';
+                nameLabel.style.whiteSpace = 'nowrap';
+                nameLabel.innerText = entry.caller === myName ? 'You' : entry.caller;
+                
+                itemDiv.appendChild(badge);
+                itemDiv.appendChild(nameLabel);
+                historyTrackEl.appendChild(itemDiv);
+            }
+        }
+
+        function checkLinesAndWinSync() {
+            let linesCompleted = 0;
+            
+            winningLines.forEach(line => {
+                if (line.every(idx => struckCells[idx])) {
+                    linesCompleted++;
+                }
+            });
+
+            // Write back scoreboard progress count
+            if (playersRef && myUserId) {
+                playersRef.child(myUserId).child('linesCompleted').set(linesCompleted);
+            }
+
+            for (let i = 0; i < 5; i++) {
+                const letterEl = document.getElementById(`letter-${i}`);
+                if (i < linesCompleted) {
+                    if (!letterEl.classList.contains('active')) {
+                        letterEl.classList.add('active');
+                        if (linesCompleted > lastCompletedCount) {
+                            playLineWinSound();
+                        }
+                    }
+                } else {
+                    letterEl.classList.remove('active');
+                }
+            }
+
+            lastCompletedCount = linesCompleted;
+
+            if (linesCompleted >= 5) {
+                isPlaying = false;
+                roomRef.child('meta/status').set('results');
+                roomRef.child('meta/winner').set(myName);
+            }
+        }
+
+        function showVictoryOverlay(winnerName) {
+            isPlaying = false;
+            playVictorySound();
+            
+            const victoryDescEl = document.getElementById('victory-desc');
+            const victoryOverlayEl = document.getElementById('victory-overlay');
+
+            if (winnerName === myName) {
+                victoryDescEl.innerText = "Incredible! You completed 5 lines first and won the game! 🏆";
+            } else {
+                victoryDescEl.innerText = `Game Over. ${winnerName} completed 5 lines first and won! 🏆`;
+            }
+            
+            victoryOverlayEl.classList.add('show');
+            triggerConfetti();
+        }
+
+        let confettiInterval = null;
+        function triggerConfetti() {
+            const colors = ['#6366f1', '#d946ef', '#10b981', '#f59e0b', '#3b82f6'];
+            let count = 0;
+            confettiInterval = setInterval(() => {
+                if (count > 60) {
+                    clearInterval(confettiInterval);
+                    return;
+                }
+                const piece = document.createElement('div');
+                piece.className = 'confetti';
+                piece.style.left = Math.random() * 100 + 'vw';
+                piece.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                const size = Math.random() * 6 + 5;
+                piece.style.width = size + 'px';
+                piece.style.height = size + 'px';
+                piece.style.animationDuration = (Math.random() * 2 + 2) + 's';
+                document.body.appendChild(piece);
+                setTimeout(() => piece.remove(), 4000);
+                count++;
+            }, 60);
+        }
+
+        function resetBingoLetters() {
+            for (let i = 0; i < 5; i++) {
+                document.getElementById(`letter-${i}`).classList.remove('active');
+            }
+            lastCompletedCount = 0;
+        }
+
+        function showStatus(text, type) {
+            const statusMessageEl = document.getElementById('status-message');
+            statusMessageEl.innerText = text;
+            statusMessageEl.className = 'status-message ' + type;
+        }
+
+        function sendChatMessage() {
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if (text === '') return;
+            
+            if (chatRef) {
+                chatRef.push({
+                    text: text,
+                    from: myName,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                });
+            }
+            input.value = '';
+        }
+
+        function appendChatMessage(msg) {
+            const messagesContainer = document.getElementById('chat-messages');
+            const isSystem = !msg.from;
+            const item = document.createElement('div');
+            item.className = 'chat-msg' + (isSystem ? ' system' : '');
+            
+            if (isSystem) {
+                item.innerText = msg.text;
+            } else {
+                item.innerHTML = `<span class="chat-msg-from" style="color:var(--primary);">${msg.from}:</span>${msg.text}`;
+            }
+            
+            messagesContainer.appendChild(item);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function exitRoom() {
+            if (playersRef && myUserId) {
+                playersRef.child(myUserId).remove().then(() => {
+                    sessionStorage.removeItem('bingo_roomId');
+                    window.location.href = 'index.html';
+                });
+            } else {
+                window.location.href = 'index.html';
+            }
+        }
+
+        function dismissVictoryAndExit() {
+            if (confettiInterval) clearInterval(confettiInterval);
+            document.getElementById('victory-overlay').classList.remove('show');
+            exitRoom();
+        }
+
+        // Boot
+        initPlay();
+    </script>
+</body>
+</html>
