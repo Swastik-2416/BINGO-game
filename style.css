@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@600;900&family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap');
+
 :root {
     --bg-radial: radial-gradient(circle at 50% 30%, #1e1b4b 0%, #09090b 80%);
     --card-bg: rgba(15, 15, 25, 0.65);

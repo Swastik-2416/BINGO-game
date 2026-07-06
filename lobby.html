@@ -288,8 +288,10 @@
             }
         }
 
-        // Boot
-        initLobby();
+        // Boot — sign in anonymously so Firebase writes are authenticated
+        firebase.auth().signInAnonymously()
+            .then(() => initLobby())
+            .catch(err => { console.error('Auth error:', err); initLobby(); }); // fallback still try
     </script>
 </body>
 </html>

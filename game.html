@@ -558,8 +558,10 @@
             exitRoom();
         }
 
-        // Boot
-        initPlay();
+        // Boot — sign in anonymously so Firebase writes are authenticated
+        firebase.auth().signInAnonymously()
+            .then(() => initPlay())
+            .catch(err => { console.error('Auth error:', err); initPlay(); });
     </script>
 </body>
 </html>

@@ -506,8 +506,10 @@
             sessionStorage.setItem('bingo_boardValues', JSON.stringify(boardValues));
         };
 
-        // Boot
-        initSetup();
+        // Boot — sign in anonymously so Firebase writes are authenticated
+        firebase.auth().signInAnonymously()
+            .then(() => initSetup())
+            .catch(err => { console.error('Auth error:', err); initSetup(); });
     </script>
 </body>
 </html>
