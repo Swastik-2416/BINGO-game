@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bingoo! — Welcome</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=1.3">
 
     <!-- Firebase Compat SDKs -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
@@ -160,7 +160,7 @@
                 if (rooms) {
                     for (const key in rooms) {
                         const r = rooms[key];
-                        if (r.meta.isPublic && r.meta.status === 'lobby') {
+                        if (r.meta.isPublic && r.meta.status === 'setup') {
                             const count = r.players ? Object.keys(r.players).length : 0;
                             if (count < 8) { openRoomId = key; break; }
                         }
@@ -221,7 +221,7 @@
                     code,
                     host: myUserId,
                     name: `${hostName}'s Lobby`,
-                    status: 'lobby',
+                    status: 'setup',
                     isPublic,
                     maxPlayers: 8,
                     teamMode: false,
@@ -251,7 +251,7 @@
                     if (rooms) {
                         for (const key in rooms) {
                             const r = rooms[key];
-                            if (r.meta.status === 'lobby') {
+                            if (r.meta.status === 'setup') {
                                 const count = r.players ? Object.keys(r.players).length : 0;
                                 if (count < 8) {
                                     found = true;
