@@ -184,6 +184,7 @@
             const maxNumber = parseInt(rangeSelect.value) || 25;
             
             selectedAvatar = selectedAvatar || emojis[0];
+            sessionStorage.removeItem('bingo_boardValues');
             sessionStorage.setItem('bingo_myName', name);
             sessionStorage.setItem('bingo_myAvatar', selectedAvatar);
             sessionStorage.setItem('bingo_myColor', myColor);
@@ -243,20 +244,25 @@
             if (!code) { alert('Please enter a room code!'); return; }
             saveProfile(name);
 
-            firebase.database().ref('rooms').once('value', snapshot => {
-                const rooms = snapshot.val();
-                let found = null;
-                if (rooms) {
-                    for (const key in rooms) {
-                        if (rooms[key].meta && rooms[key].meta.code === code) { found = key; break; }
+            firebase.database().ref('rooms').once('value')
+                .then(snapshot => {
+                    const rooms = snapshot.val();
+                    let found = null;
+                    if (rooms) {
+                        for (const key in rooms) {
+                            if (rooms[key].meta && rooms[key].meta.code === code) { found = key; break; }
+                        }
                     }
-                }
-                if (found) {
-                    goToLobby(found, false);
-                } else {
-                    alert('Room not found! Check the code and try again.');
-                }
-            });
+                    if (found) {
+                        goToLobby(found, false);
+                    } else {
+                        alert('Room not found! Check the code and try again.');
+                    }
+                })
+                .catch(err => {
+                    console.error("Join room error:", err);
+                    alert("Failed to join room: " + err.message + "\nMake sure Realtime Database rules allow read access.");
+                });
         }
 
         function joinSelectedRoom(roomId) {
@@ -289,6 +295,7 @@
         }
 
         function goToLobby(roomId, isHost) {
+            sessionStorage.removeItem('bingo_boardValues');
             sessionStorage.setItem('bingo_roomId', roomId);
             sessionStorage.setItem('bingo_isHost', isHost ? 'true' : 'false');
             window.location.href = 'game.html';
@@ -368,7 +375,7 @@
                         document.getElementById('nickname-input').value = 'Player_' + Math.floor(100 + Math.random() * 900);
                         showJoinRoomMenu();
                         document.getElementById('room-code-input').value = code;
-                        setTimeout(joinPrivateRoom, 400);
+                        joinPrivateRoom();
                     }
                 })
                 .catch(err => {

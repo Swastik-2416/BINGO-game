@@ -241,7 +241,20 @@
         let chatRef = null;
         let callsRef = null;
 
+        const pageLoadTime = Date.now();
         let boardValues = new Array(25).fill(null);
+        try {
+            const saved = sessionStorage.getItem('bingo_boardValues');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed) && parsed.length === 25) {
+                    boardValues = parsed;
+                }
+            }
+        } catch (e) {
+            console.error("Failed to parse saved board values:", e);
+        }
+
         let struckCells = new Array(25).fill(false);
         let calledNumbers = [];
         let isPlaying = false;
@@ -453,7 +466,10 @@
             // Strike calls listener
             callsRef.on('child_added', snapshot => {
                 const call = snapshot.val();
-                if (call) executeStruckNumberSync(call.number, call.calledBy);
+                if (call) {
+                    const isNewCall = call.timestamp && (call.timestamp > pageLoadTime - 5000);
+                    executeStruckNumberSync(call.number, call.calledBy, isNewCall);
+                }
             });
         }
 
@@ -719,6 +735,9 @@
                 input.maxLength = 2;
                 input.id = `cell-input-${i}`;
                 input.dataset.index = i;
+                if (boardValues[i] !== null) {
+                    input.value = boardValues[i];
+                }
                 
                 input.addEventListener('keydown', handleKeyNavigation);
                 input.addEventListener('input', handleCellInput);
@@ -885,6 +904,7 @@
             }
 
             boardValues = currentValues;
+            sessionStorage.setItem('bingo_boardValues', JSON.stringify(boardValues));
 
             let filledCount = 0;
             for (let i = 0; i < 25; i++) {
@@ -1055,7 +1075,7 @@
             });
         }
 
-        function executeStruckNumberSync(num, callerName) {
+        function executeStruckNumberSync(num, callerName, notify = true) {
             calledNumbers.push({ number: num, caller: callerName });
             updateCalledHistory();
 
@@ -1067,12 +1087,16 @@
                 if (cellEl) {
                     cellEl.classList.add('struck');
                 }
-                showStatus(`Number ${num} called by ${callerName} (Struck! 🎉)`, "success");
-                playStrikeSound();
-                checkLinesAndWinSync();
+                if (notify) {
+                    showStatus(`Number ${num} called by ${callerName} (Struck! 🎉)`, "success");
+                    playStrikeSound();
+                }
+                checkLinesAndWinSync(notify);
             } else {
-                showStatus(`Number ${num} called by ${callerName} (Not on board).`, "neutral");
-                playNoMatchSound();
+                if (notify) {
+                    showStatus(`Number ${num} called by ${callerName} (Not on board).`, "neutral");
+                    playNoMatchSound();
+                }
             }
         }
 
@@ -1084,7 +1108,8 @@
             }
 
             historyTrackEl.innerHTML = '';
-            for (let i = calledNumbers.length - 1; i >= 0; i--) {
+            // Chronological order: 0 to length - 1 so horizontal placeholder is saved
+            for (let i = 0; i < calledNumbers.length; i++) {
                 const entry = calledNumbers[i];
                 
                 const itemDiv = document.createElement('div');
@@ -1114,9 +1139,15 @@
                 itemDiv.appendChild(nameLabel);
                 historyTrackEl.appendChild(itemDiv);
             }
+
+            // Smooth scroll to the end
+            historyTrackEl.scrollTo({
+                left: historyTrackEl.scrollWidth,
+                behavior: 'smooth'
+            });
         }
 
-        function checkLinesAndWinSync() {
+        function checkLinesAndWinSync(notify = true) {
             let linesCompleted = 0;
             
             winningLines.forEach(line => {
@@ -1135,7 +1166,7 @@
                 if (i < linesCompleted) {
                     if (!letterEl.classList.contains('active')) {
                         letterEl.classList.add('active');
-                        if (linesCompleted > lastCompletedCount) {
+                        if (notify && linesCompleted > lastCompletedCount) {
                             playLineWinSound();
                         }
                     }
@@ -1148,8 +1179,10 @@
 
             if (linesCompleted >= 5) {
                 isPlaying = false;
-                roomRef.child('meta/status').set('results');
-                roomRef.child('meta/winner').set(myName);
+                if (notify) {
+                    roomRef.child('meta/status').set('results');
+                    roomRef.child('meta/winner').set(myName);
+                }
             }
         }
 
@@ -1241,6 +1274,8 @@
         function exitRoom() {
             const conf = confirm("Are you sure you want to leave the room?");
             if (!conf) return;
+
+            sessionStorage.removeItem('bingo_boardValues');
 
             if (bingoMode === 'local') {
                 sessionStorage.removeItem('bingo_roomId');
