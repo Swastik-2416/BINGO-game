@@ -48,12 +48,12 @@
                         <div class="avatar-label">Nickname</div>
                         <input type="text" class="caller-input" id="nickname-input"
                                placeholder="Enter nickname" maxlength="12" value="Player"
-                               style="height: 36px; font-size: 0.9rem;">
+                               style="height: 40px; font-size: 1rem;">
                     </div>
                     <div style="display:flex; flex-direction:column; gap:6px; flex: 1; min-width: 150px;">
                         <div class="avatar-label">Bingo Number Range</div>
-                        <select id="number-range-select" class="caller-input" style="height: 36px; font-size: 0.9rem; background: rgba(15, 15, 25, 0.8); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: var(--text-main); font-family: inherit; padding: 0 0.5rem; outline: none; cursor: pointer;">
-                            <option value="25" selected>1 to 25 (Kids / Default)</option>
+                        <select id="number-range-select" class="caller-input" style="height: 40px; font-size: 1rem; background: rgba(15, 15, 25, 0.8); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: var(--text-main); font-family: inherit; padding: 0 0.85rem; outline: none; cursor: pointer;">
+                            <option value="25" selected>1 to 25 (Default)</option>
                             <option value="50">1 to 50</option>
                             <option value="75">1 to 75 (Standard)</option>
                             <option value="90">1 to 90</option>
@@ -87,21 +87,34 @@
                     </button>
                 </div>
 
-                <!-- OPTION 3: Play with Friends (Private) -->
+                <!-- OPTION 3: Play with Friends (Custom Room) -->
                 <div class="caller-panel" style="border-color: rgba(217, 70, 239, 0.15); background: rgba(217, 70, 239, 0.02);">
-                    <div class="avatar-label" style="color: var(--secondary);">Option 3: Play with Friends</div>
+                    <div class="avatar-label" style="color: var(--secondary);">Option 3: Custom Match</div>
                     <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 6px; line-height: 1.35;">
-                        Host a custom match and share room code, or join a friend's room.
+                        Host a custom match (public or private), or join a friend's room.
                     </div>
                     <div class="controls-row">
                         <button class="action-btn secondary" id="btn-host"
-                                style="flex:1; height:36px; font-size:0.8rem;" onclick="hostPrivateRoom()" disabled>
-                            Host Private
+                                style="flex:1; height:36px; font-size:0.8rem;" onclick="createRoomMenu()" disabled>
+                            Host Room
                         </button>
                         <button class="action-btn secondary" id="btn-join"
                                 style="flex:1; height:36px; font-size:0.8rem;" onclick="showJoinRoomMenu()" disabled>
-                            Join Private
+                            Join Room
                         </button>
+                    </div>
+
+                    <!-- Host Options (initially hidden) -->
+                    <div class="caller-panel hidden" id="host-options-panel" style="margin-top: 6px; background: rgba(0, 0, 0, 0.2); border-color: rgba(255, 255, 255, 0.05);">
+                        <div class="avatar-label">Host Options</div>
+                        <div class="caller-row" style="align-items: center; gap: 8px;">
+                            <select id="room-visibility-select" class="caller-input" style="height:34px; font-size:0.8rem; background: rgba(15, 15, 25, 0.8); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: var(--text-main); font-family: inherit; cursor: pointer; flex: 1;">
+                                <option value="private" selected>🔒 Private (Invite Only)</option>
+                                <option value="public">🌐 Public (Show in List)</option>
+                            </select>
+                            <button class="action-btn primary" style="width:70px; height:34px; font-size:0.8rem; background: linear-gradient(135deg, var(--secondary) 0%, #b5179e 100%);"
+                                    onclick="hostRoomWithOptions()">Host</button>
+                        </div>
                     </div>
 
                     <!-- Join Options (initially hidden) -->
@@ -161,13 +174,13 @@
         }
 
         function createRoomMenu() {
-            document.getElementById('join-options-panel').classList.add('hidden');
-            document.getElementById('host-options-panel').classList.remove('hidden');
+            document.getElementById('join-options-panel')?.classList.add('hidden');
+            document.getElementById('host-options-panel')?.classList.remove('hidden');
         }
 
         function showJoinRoomMenu() {
-            document.getElementById('host-options-panel').classList.add('hidden');
-            document.getElementById('join-options-panel').classList.remove('hidden');
+            document.getElementById('host-options-panel')?.classList.add('hidden');
+            document.getElementById('join-options-panel')?.classList.remove('hidden');
         }
 
         function saveProfile(name) {
@@ -230,11 +243,13 @@
             });
         }
 
-        function hostPrivateRoom() {
+        function hostRoomWithOptions() {
             if (!myUserId) { alert('Still connecting — please wait a moment!'); return; }
             const name = document.getElementById('nickname-input').value.trim() || 'Host';
+            const visibility = document.getElementById('room-visibility-select').value;
+            const isPublic = (visibility === 'public');
             saveProfile(name);
-            createAndGoToRoom(name, false, false);
+            createAndGoToRoom(name, isPublic, false);
         }
 
         function joinPrivateRoom() {
