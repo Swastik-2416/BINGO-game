@@ -40,7 +40,7 @@
                     <!-- Setup State (Default first view for BINGO board configuration) -->
                     <div class="glass-panel" id="subview-setup" style="width: 100%; height: 100%; justify-content: center; align-items: center; gap: 0.5rem;">
                         <!-- Room Invite and Room Code Box on Top of Setup Board -->
-                        <div class="caller-panel" style="width: 100%; max-width: 320px; align-items: center; gap: 0.25rem; padding: 0.5rem; border-color: var(--secondary);">
+                        <div class="caller-panel" id="room-invite-box" style="width: 100%; max-width: 320px; align-items: center; gap: 0.25rem; padding: 0.5rem; border-color: var(--secondary);">
                             <div class="avatar-label" style="font-size: 0.65rem;">Share Room Code to Invite Friends</div>
                             <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
                                 <span id="room-code-display" style="font-family: 'Orbitron'; font-size: 1.5rem; font-weight: 900; color: #fff; letter-spacing: 1px;">------</span>
@@ -50,7 +50,7 @@
                             </div>
                         </div>
 
-                        <div class="subtitle" style="margin-bottom: 2px;">Fill board grid with numbers 1 to 25.</div>
+                        <div class="subtitle" id="setup-subtitle" style="margin-bottom: 2px;">Fill board grid with numbers.</div>
                         <div class="grid" id="setup-grid">
                             <!-- JS generates 25 inputs -->
                         </div>
@@ -82,6 +82,7 @@
                         
                         <!-- Strike called number panel -->
                         <div class="caller-panel">
+                            <div class="avatar-label" id="turn-indicator-label" style="text-align: center; margin-bottom: 4px; font-weight: 800;">Turn Status</div>
                             <div class="caller-row">
                                 <input type="text" inputmode="numeric" pattern="[0-9]*" class="caller-input" id="caller-input" placeholder="Type announced number" autocomplete="off">
                                 <button class="action-btn primary caller-btn" onclick="handleStrikeSubmit()">
@@ -231,6 +232,8 @@
         const myColor = sessionStorage.getItem('bingo_myColor') || '#6366f1';
         const myUserId = sessionStorage.getItem('bingo_myUserId');
         const roomId = sessionStorage.getItem('bingo_roomId');
+        const bingoMode = sessionStorage.getItem('bingo_mode') || 'online';
+        let maxNumber = parseInt(sessionStorage.getItem('bingo_maxNumber')) || 25;
         
         let isHost = sessionStorage.getItem('bingo_isHost') === 'true';
         let roomRef = null;
@@ -255,6 +258,10 @@
         ];
 
         function initRoomSync() {
+            if (bingoMode === 'local') {
+                initLocalGameRoom();
+                return;
+            }
             if (!roomId || !myUserId) {
                 window.location.href = 'index.html';
                 return;
@@ -294,6 +301,9 @@
                 isHost = (data.meta.host === myUserId);
                 sessionStorage.setItem('bingo_isHost', isHost ? 'true' : 'false');
 
+                maxNumber = data.meta.maxNumber || 25;
+                document.getElementById('setup-subtitle').innerText = `Fill board grid with unique numbers 1 to ${maxNumber}.`;
+
                 currentRoomCode = data.meta.code;
                 document.getElementById('room-code-display').innerText = currentRoomCode;
                 document.getElementById('room-header-info').innerText = `${currentRoomCode}`;
@@ -302,7 +312,7 @@
                 const listEl = document.getElementById('room-players-list');
                 listEl.innerHTML = '';
                 const players = data.players || {};
-                const playerKeys = Object.keys(players);
+                const playerKeys = Object.keys(players).sort();
 
                 let allClientsReady = true;
                 let clientCount = 0;
@@ -399,6 +409,33 @@
                         isPlayGridRendered = true;
                         isPlaying = true;
                     }
+
+                    // Turn-based calling logic
+                    let activeTurnUid = data.meta.turn;
+                    if (!activeTurnUid || !players[activeTurnUid]) {
+                        activeTurnUid = playerKeys[0];
+                        if (isHost && activeTurnUid && activeTurnUid !== data.meta.turn) {
+                            roomRef.child('meta/turn').set(activeTurnUid);
+                        }
+                    }
+
+                    const turnLabel = document.getElementById('turn-indicator-label');
+                    const callerInput = document.getElementById('caller-input');
+                    const callerBtn = document.querySelector('.caller-btn');
+                    const activePlayer = players[activeTurnUid];
+
+                    if (activeTurnUid === myUserId) {
+                        turnLabel.innerHTML = `<span style="color: var(--secondary); font-size: 0.8rem; font-weight: 800; animation: pulse 1.5s infinite;">👉 YOUR TURN TO CALL! (1-${maxNumber}) 👈</span>`;
+                        callerInput.disabled = false;
+                        callerInput.placeholder = "Enter number to call...";
+                        if (callerBtn) callerBtn.disabled = false;
+                    } else {
+                        const nameText = activePlayer ? activePlayer.name : 'someone';
+                        turnLabel.innerHTML = `<span style="color: var(--text-muted); font-size: 0.75rem;">Waiting for <strong>${nameText}</strong> to call...</span>`;
+                        callerInput.disabled = true;
+                        callerInput.placeholder = `Waiting for ${nameText}...`;
+                        if (callerBtn) callerBtn.disabled = true;
+                    }
                 }
 
                 // Victory overlay syncing
@@ -418,6 +455,237 @@
                 const call = snapshot.val();
                 if (call) executeStruckNumberSync(call.number, call.calledBy);
             });
+        }
+
+        function initLocalGameRoom() {
+            document.getElementById('room-invite-box').style.display = 'none';
+            document.getElementById('room-header-info').innerText = `LOCAL BINGO (1-${maxNumber})`;
+            
+            // Build player list
+            const listEl = document.getElementById('room-players-list');
+            listEl.innerHTML = `
+                <div class="player-item host">
+                    <div class="player-meta">
+                        <span class="player-avatar" style="border: 2px solid ${myColor};">${selectedAvatar}</span>
+                        <span class="player-name">${myName} (You)</span>
+                    </div>
+                    <span id="local-score-label" style="font-weight:700; font-size:0.75rem;">0 L</span>
+                </div>
+            `;
+            
+            // Setup views
+            const viewSetup = document.getElementById('subview-setup');
+            viewSetup.classList.remove('hidden');
+            document.getElementById('subview-playing').classList.add('hidden');
+            document.getElementById('setup-subtitle').innerText = `Fill board grid with unique numbers 1 to ${maxNumber}.`;
+
+            buildSetupGridInputs();
+            isSetupInputsRendered = true;
+            
+            const setupBtn = document.getElementById('setup-action-btn');
+            setupBtn.disabled = true;
+            setupBtn.innerText = "Start Game";
+            
+            // Rebind local start button action
+            setupBtn.onclick = () => {
+                viewSetup.classList.add('hidden');
+                document.getElementById('subview-playing').classList.remove('hidden');
+                buildPlayGridStatic();
+                isPlayGridRendered = true;
+                isPlaying = true;
+                renderLocalCalledBoard();
+            };
+        }
+
+        function renderLocalCalledBoard() {
+            const panel = document.querySelector('.chat-panel');
+            panel.innerHTML = '';
+            
+            const boardHeader = panel.previousElementSibling;
+            if (boardHeader) boardHeader.innerText = 'Called Board';
+            
+            const grid = document.createElement('div');
+            grid.style.display = 'grid';
+            grid.style.gridTemplateColumns = 'repeat(5, 1fr)';
+            grid.style.gap = '4px';
+            grid.style.overflowY = 'auto';
+            grid.style.flexGrow = '1';
+            grid.style.padding = '4px';
+            grid.style.background = 'rgba(0, 0, 0, 0.2)';
+            grid.style.borderRadius = '8px';
+            grid.id = 'local-board-grid';
+
+            for (let i = 1; i <= maxNumber; i++) {
+                const badge = document.createElement('div');
+                badge.className = 'history-badge';
+                badge.style.width = '100%';
+                badge.style.height = '32px';
+                badge.style.borderRadius = '6px';
+                badge.style.fontSize = '0.85rem';
+                badge.style.cursor = 'pointer';
+                badge.innerText = i;
+                badge.id = `local-called-badge-${i}`;
+                
+                badge.addEventListener('click', () => {
+                    handleLocalCall(i);
+                });
+                grid.appendChild(badge);
+            }
+            
+            panel.appendChild(grid);
+            
+            const btnRow = document.createElement('div');
+            btnRow.className = 'chat-input-row';
+            btnRow.style.marginTop = '6px';
+            
+            const resetBtn = document.createElement('button');
+            resetBtn.className = 'action-btn secondary';
+            resetBtn.style.width = '100%';
+            resetBtn.style.height = '30px';
+            resetBtn.style.fontSize = '0.75rem';
+            resetBtn.innerText = 'Clear Called List';
+            resetBtn.onclick = () => {
+                if (confirm("Reset the list of called numbers?")) {
+                    calledNumbers = [];
+                    struckCells.fill(false);
+                    const badges = document.querySelectorAll('[id^="local-called-badge-"]');
+                    badges.forEach(b => {
+                        b.classList.remove('latest');
+                        b.style.background = '';
+                        b.style.borderColor = '';
+                        b.style.boxShadow = '';
+                    });
+                    for (let i = 0; i < 25; i++) {
+                        const cellEl = document.getElementById(`play-cell-${i}`);
+                        if (cellEl) cellEl.classList.remove('struck');
+                    }
+                    resetBingoLetters();
+                    showStatus("Board cleared", "success");
+                    updateLocalTimeline();
+                }
+            };
+            panel.appendChild(btnRow);
+            btnRow.appendChild(resetBtn);
+
+            // Re-render local timeline
+            updateLocalTimeline();
+            const turnLabel = document.getElementById('turn-indicator-label');
+            if (turnLabel) {
+                turnLabel.innerHTML = `<span style="color: var(--success); font-size: 0.8rem; font-weight: 800;">LOCAL PARTY MODE (1-${maxNumber})</span>`;
+            }
+            const callerInput = document.getElementById('caller-input');
+            if (callerInput) {
+                callerInput.placeholder = "Enter called number...";
+            }
+        }
+
+        function handleLocalCall(num) {
+            const idx = calledNumbers.indexOf(num);
+            if (idx !== -1) {
+                calledNumbers.splice(idx, 1);
+                
+                const badge = document.getElementById(`local-called-badge-${num}`);
+                if (badge) {
+                    badge.style.background = '';
+                    badge.style.borderColor = '';
+                    badge.style.boxShadow = '';
+                }
+                
+                let cellIndex = boardValues.indexOf(num);
+                if (cellIndex !== -1) {
+                    struckCells[cellIndex] = false;
+                    const cellEl = document.getElementById(`play-cell-${cellIndex}`);
+                    if (cellEl) cellEl.classList.remove('struck');
+                }
+                updateLocalTimeline();
+                checkLinesAndWinLocal();
+                showStatus(`Number ${num} uncalled.`, "neutral");
+            } else {
+                calledNumbers.push(num);
+                
+                const badge = document.getElementById(`local-called-badge-${num}`);
+                if (badge) {
+                    badge.style.background = 'linear-gradient(135deg, var(--secondary) 0%, #b5179e 100%)';
+                    badge.style.borderColor = 'rgba(217, 70, 239, 0.3)';
+                    badge.style.boxShadow = '0 0 8px rgba(217, 70, 239, 0.35)';
+                }
+                
+                let cellIndex = boardValues.indexOf(num);
+                if (cellIndex !== -1) {
+                    struckCells[cellIndex] = true;
+                    const cellEl = document.getElementById(`play-cell-${cellIndex}`);
+                    if (cellEl) cellEl.classList.add('struck');
+                    playStrikeSound();
+                } else {
+                    playNoMatchSound();
+                }
+                updateLocalTimeline();
+                checkLinesAndWinLocal();
+                showStatus(`Number ${num} called!`, "success");
+            }
+        }
+
+        function updateLocalTimeline() {
+            const historyTrackEl = document.getElementById('history-track');
+            if (calledNumbers.length === 0) {
+                historyTrackEl.innerHTML = '<div class="text-muted" style="font-size: 0.75rem; padding: 2px 0;">No calls yet.</div>';
+                return;
+            }
+
+            historyTrackEl.innerHTML = '';
+            for (let i = calledNumbers.length - 1; i >= 0; i--) {
+                const entryNum = calledNumbers[i];
+                const itemDiv = document.createElement('div');
+                itemDiv.style.display = 'flex';
+                itemDiv.style.flexDirection = 'column';
+                itemDiv.style.alignItems = 'center';
+                itemDiv.style.gap = '2px';
+                itemDiv.style.flexShrink = '0';
+                
+                const badge = document.createElement('div');
+                badge.className = 'history-badge';
+                badge.innerText = entryNum;
+                if (i === calledNumbers.length - 1) {
+                    badge.classList.add('latest');
+                }
+                itemDiv.appendChild(badge);
+                historyTrackEl.appendChild(itemDiv);
+            }
+        }
+
+        function checkLinesAndWinLocal() {
+            let linesCompleted = 0;
+            winningLines.forEach(line => {
+                if (line.every(idx => struckCells[idx])) {
+                    linesCompleted++;
+                }
+            });
+
+            const scoreEl = document.getElementById('local-score-label');
+            if (scoreEl) scoreEl.innerText = `${linesCompleted} L`;
+
+            for (let i = 0; i < 5; i++) {
+                const letterEl = document.getElementById(`letter-${i}`);
+                if (i < linesCompleted) {
+                    if (!letterEl.classList.contains('active')) {
+                        letterEl.classList.add('active');
+                        if (linesCompleted > lastCompletedCount) {
+                            playLineWinSound();
+                        }
+                    }
+                } else {
+                    letterEl.classList.remove('active');
+                }
+            }
+
+            lastCompletedCount = linesCompleted;
+
+            if (linesCompleted >= 5) {
+                isPlaying = false;
+                setTimeout(() => {
+                    showVictoryOverlay(myName);
+                }, 500);
+            }
         }
 
         // Copy Direct Link Utility
@@ -567,11 +835,14 @@
         }
 
         function randomizeBoard() {
-            let nums = Array.from({length: 25}, (_, i) => i + 1);
-            for (let i = nums.length - 1; i > 0; i--) {
+            let pool = Array.from({length: maxNumber}, (_, i) => i + 1);
+            // Shuffle
+            for (let i = pool.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
-                [nums[i], nums[j]] = [nums[j], nums[i]];
+                [pool[i], pool[j]] = [pool[j], pool[i]];
             }
+            // Pick first 25
+            let nums = pool.slice(0, 25);
             for (let i = 0; i < 25; i++) {
                 const input = document.getElementById(`cell-input-${i}`);
                 if (input) {
@@ -584,7 +855,7 @@
         }
 
         function updateValidation() {
-            let counts = new Array(26).fill(0);
+            let counts = {};
             let currentValues = new Array(25).fill(null);
 
             for (let i = 0; i < 25; i++) {
@@ -596,11 +867,11 @@
 
                 if (rawVal !== '') {
                     let val = parseInt(rawVal);
-                    if (isNaN(val) || val < 1 || val > 25) {
+                    if (isNaN(val) || val < 1 || val > maxNumber) {
                         input.classList.add('error');
                     } else {
                         currentValues[i] = val;
-                        counts[val]++;
+                        counts[val] = (counts[val] || 0) + 1;
                     }
                 }
             }
@@ -620,7 +891,7 @@
                 if (currentValues[i] !== null) filledCount++;
             }
 
-            const hasDuplicates = counts.some(c => c > 1);
+            const hasDuplicates = Object.values(counts).some(c => c > 1);
             const allFilled = currentValues.every(v => v !== null);
             const hasErrors = Array.from(document.getElementById('setup-grid').querySelectorAll('.error')).length > 0;
 
@@ -636,7 +907,7 @@
                 if (hasDuplicates) {
                     boardStatusEl.innerHTML = `<span style="color: var(--danger); font-weight:700;">Duplicate numbers found</span>`;
                 } else if (hasErrors) {
-                    boardStatusEl.innerHTML = `<span style="color: var(--danger); font-weight:700;">Invalid values (must be 1-25)</span>`;
+                    boardStatusEl.innerHTML = `<span style="color: var(--danger); font-weight:700;">Invalid values (must be 1-${maxNumber})</span>`;
                 } else {
                     boardStatusEl.innerHTML = `<span style="color: var(--text-muted);">${filledCount} / 25 entered</span>`;
                 }
@@ -644,19 +915,19 @@
         }
 
         function validateBoardFormatLocal() {
-            let counts = new Array(26).fill(0);
+            let counts = {};
             let currentValues = new Array(25).fill(null);
             for (let i = 0; i < 25; i++) {
                 const input = document.getElementById(`cell-input-${i}`);
                 if (input && input.value !== '') {
                     let val = parseInt(input.value.trim());
-                    if (!isNaN(val) && val >= 1 && val <= 25) {
+                    if (!isNaN(val) && val >= 1 && val <= maxNumber) {
                         currentValues[i] = val;
-                        counts[val]++;
+                        counts[val] = (counts[val] || 0) + 1;
                     }
                 }
             }
-            return currentValues.every(v => v !== null) && !counts.some(c => c > 1);
+            return currentValues.every(v => v !== null) && !Object.values(counts).some(c => c > 1);
         }
 
         function handleReadyAction() {
@@ -722,17 +993,39 @@
             if (valStr === '') return;
 
             let val = parseInt(valStr);
-            callerInputEl.value = '';
-
-            if (isNaN(val) || val < 1 || val > 25) {
-                showStatus("Enter a valid number between 1 and 25.", "error");
+            if (isNaN(val) || val < 1 || val > maxNumber) {
+                showStatus(`Enter a valid number between 1 and ${maxNumber}.`, "error");
                 playErrorSound();
                 return;
             }
 
-            // Sync Firebase database calls
-            callsRef.once('value', snapshot => {
-                const calls = snapshot.val() || {};
+            if (bingoMode === 'local') {
+                handleLocalCall(val);
+                callerInputEl.value = '';
+                return;
+            }
+
+            // Online Turn-Based Calling Logic
+            roomRef.once('value', snapshot => {
+                const data = snapshot.val();
+                if (!data) return;
+
+                const players = data.players || {};
+                const playerKeys = Object.keys(players).sort();
+                
+                // Determine active turn
+                let activeTurnUid = data.meta.turn;
+                if (!activeTurnUid || !players[activeTurnUid]) {
+                    activeTurnUid = playerKeys[0];
+                }
+
+                if (activeTurnUid !== myUserId) {
+                    showStatus("It is not your turn to call!", "error");
+                    playErrorSound();
+                    return;
+                }
+
+                const calls = data.calls || {};
                 const alreadyCalled = Object.values(calls).some(c => c.number === val);
                 
                 if (alreadyCalled) {
@@ -740,11 +1033,24 @@
                     playNoMatchSound();
                     return;
                 }
+
+                // Advance turn sequence to the next player
+                const currentIndex = playerKeys.indexOf(myUserId);
+                const nextIndex = (currentIndex + 1) % playerKeys.length;
+                const nextTurnUid = playerKeys[nextIndex];
+
+                const updates = {};
+                const callId = roomRef.child('calls').push().key;
                 
-                callsRef.push({
+                updates[`calls/${callId}`] = {
                     number: val,
                     calledBy: myName,
                     timestamp: firebase.database.ServerValue.TIMESTAMP
+                };
+                updates['meta/turn'] = nextTurnUid;
+
+                roomRef.update(updates).then(() => {
+                    callerInputEl.value = '';
                 });
             });
         }
@@ -936,6 +1242,12 @@
             const conf = confirm("Are you sure you want to leave the room?");
             if (!conf) return;
 
+            if (bingoMode === 'local') {
+                sessionStorage.removeItem('bingo_roomId');
+                window.location.href = 'index.html';
+                return;
+            }
+
             if (playersRef && myUserId) {
                 playersRef.child(myUserId).remove().then(() => {
                     sessionStorage.removeItem('bingo_roomId');
@@ -953,12 +1265,16 @@
         }
 
         // Boot — sign in anonymously to ensure DB session validity
-        firebase.auth().signInAnonymously()
-            .then(() => initRoomSync())
-            .catch(err => {
-                console.error("Auth error:", err);
-                initRoomSync();
-            });
+        if (bingoMode === 'local') {
+            initRoomSync();
+        } else {
+            firebase.auth().signInAnonymously()
+                .then(() => initRoomSync())
+                .catch(err => {
+                    console.error("Auth error:", err);
+                    initRoomSync();
+                });
+        }
     </script>
 </body>
 </html>

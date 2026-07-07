@@ -790,6 +790,11 @@ div.cell.struck::after {
     display: none !important;
 }
 
+@keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(0.97); opacity: 0.8; }
+}
+
 /* Responsive Layout Rules */
 @media (max-width: 768px) {
     .side-col {
