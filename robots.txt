@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://swastik-2416.github.io/BINGO-game/sitemap.xml
